@@ -1,0 +1,152 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">出入库登记由教师 / 管理员操作<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">切换为教师 / 管理员账号</button>
+  </view>
+
+  <block wx:else>
+    <view class="hero io-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-t">出入库登记</view>
+        <view class="hero-s">登记耗材入库 / 出库，自动更新库存</view>
+      </view>
+    </view>
+
+    <view class="page">
+      <!-- 类型分段 -->
+      <view class="seg">
+        <view class="seg-i {{type==='in'?'on on-cyan':''}}" bindtap="setType" data-t="in">入库 ＋</view>
+        <view class="seg-i {{type==='out'?'on':''}}" bindtap="setType" data-t="out">出库 －</view>
+      </view>
+
+      <view class="card">
+        <view class="field">
+          <view class="field-l">选择耗材</view>
+          <picker mode="selector" range="{{mats}}" range-key="name" value="{{idx}}" bindchange="onMat">
+            <view class="picker-inp">
+              <text class="{{mats.length ? '' : 'muted'}}">{{mats.length ? (mats[idx].name + '（' + mats[idx].id + '）') : '耗材加载中…'}}</text>
+              <image class="picker-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
+            </view>
+          </picker>
+        </view>
+
+        <view class="field">
+          <view class="field-l">数量</view>
+          <view class="qty">
+            <view class="qty-btn" bindtap="stepQty" data-d="-1">
+              <image src="/images/ic-minus-s.png" mode="aspectFit"></image>
+            </view>
+            <input class="qty-inp" type="number" value="{{qty}}" bindinput="onQty" />
+            <view class="qty-btn" bindtap="stepQty" data-d="1">
+              <image src="/images/ic-plus-s.png" mode="aspectFit"></image>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{curMat}}" class="io-preview">
+          <view class="kv"><text class="kv-k">当前库存</text><text class="kv-v">{{curMat.stock}} {{curMat.unit}}</text></view>
+          <view class="kv"><text class="kv-k">安全库存</text><text class="kv-v">{{curMat.safe}} {{curMat.unit}}</text></view>
+          <view class="kv"><text class="kv-k">登记后</text><text class="kv-v io-after">{{afterStock}} {{curMat.unit}}</text></view>
+        </view>
+
+        <button class="btn btn-primary btn-block mt-m" bindtap="submit">确认{{type==='in'?'入库':'出库'}}登记</button>
+      </view>
+
+      <!-- 新建物品入库：库里没有的东西，直接建档入库 -->
+      <view class="io-new card card-accent">
+        <view class="row">
+          <view class="list-ic"><image src="/images/ic-plus-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">新建物品入库</view>
+            <view class="list-sub">库里没有的物品，先建档再入库</view>
+          </view>
+          <image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
+        </view>
+        <button class="btn btn-ghost btn-block btn-sm mt-m" bindtap="openNew">＋ 新建物品</button>
+      </view>
+
+      <!-- 出入库流水账 -->
+      <view class="sec mt-l">
+        <view class="sec-bar"></view>
+        <view class="sec-t">出入库流水</view>
+        <view class="sec-x">最近 {{logs.length}} 条</view>
+      </view>
+      <view class="card">
+        <view wx:if="{{!logs.length}}" class="empty">
+          <image class="empty-ic" src="/images/ic-log-s.png" mode="aspectFit"></image>
+          <view>暂无出入库记录</view>
+        </view>
+        <view wx:for="{{logs}}" wx:key="id" class="list-item">
+          <view class="list-ic"><image src="{{item.icon}}" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{item.itemName}}</view>
+            <view class="list-sub">{{item.item}} · {{item.op}} · {{item.time}}</view>
+          </view>
+          <view class="io-amt {{item.isIn ? 'in' : 'out'}}">{{item.isIn ? '+' : '-'}}{{item.qty}}</view>
+        </view>
+      </view>
+
+      <view class="tip">登记将实时写入数据源；出库数量超过当前库存时会被拒绝。</view>
+    </view>
+
+    <!-- ===== 新建物品弹层 ===== -->
+    <view wx:if="{{showNew}}" class="nm-mask" bindtap="closeNew">
+      <view class="nm-panel" catchtap="noop">
+        <view class="nm-head">
+          <view class="nm-title">新建物品入库</view>
+          <view class="nm-close" bindtap="closeNew">
+            <image src="/images/ic-close-s.png" mode="aspectFit"></image>
+          </view>
+        </view>
+        <view class="nm-sub">填写物品信息并入库，系统自动分配编号并记一笔入库流水。</view>
+
+        <view class="field">
+          <view class="field-l">物品名称 <text class="req">*</text></view>
+          <input class="inp" placeholder="如 光耦 4N35" placeholder-class="inp-ph" data-k="Name" value="{{nmName}}" bindinput="nmInput" />
+        </view>
+        <view class="nm-row">
+          <view class="field nm-col">
+            <view class="field-l">规格</view>
+            <input class="inp" placeholder="如 DIP-4" placeholder-class="inp-ph" data-k="Spec" value="{{nmSpec}}" bindinput="nmInput" />
+          </view>
+          <view class="field nm-col">
+            <view class="field-l">单位</view>
+            <input class="inp" placeholder="个" placeholder-class="inp-ph" data-k="Unit" value="{{nmUnit}}" bindinput="nmInput" />
+          </view>
+        </view>
+        <view class="nm-row">
+          <view class="field nm-col">
+            <view class="field-l">类别</view>
+            <input class="inp" placeholder="电子元件" placeholder-class="inp-ph" data-k="Cat" value="{{nmCat}}" bindinput="nmInput" />
+          </view>
+          <view class="field nm-col">
+            <view class="field-l">存放位置</view>
+            <input class="inp" placeholder="如 A柜-3" placeholder-class="inp-ph" data-k="Loc" value="{{nmLoc}}" bindinput="nmInput" />
+          </view>
+        </view>
+        <view class="nm-row">
+          <view class="field nm-col">
+            <view class="field-l">入库数量</view>
+            <view class="qty">
+              <view class="qty-btn" bindtap="nmStep" data-d="-1"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+              <input class="qty-inp" type="number" value="{{nmQty}}" bindinput="nmInput" data-k="Qty" />
+              <view class="qty-btn" bindtap="nmStep" data-d="1"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+            </view>
+          </view>
+          <view class="field nm-col">
+            <view class="field-l">安全库存</view>
+            <input class="inp" type="number" placeholder="0" placeholder-class="inp-ph" data-k="Safe" value="{{nmSafe}}" bindinput="nmInput" />
+          </view>
+        </view>
+
+        <view class="btn-row mt-m">
+          <view class="btn-cell"><view class="btn btn-ghost" bindtap="closeNew">取消</view></view>
+          <view class="btn-cell"><view class="btn btn-primary" bindtap="submitNew">确认入库</view></view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

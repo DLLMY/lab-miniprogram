@@ -1,0 +1,19 @@
+/* 审批页样式 */
+.ap-hero { padding: 40rpx 32rpx 44rpx; }
+.ap-count {
+  display: flex;
+  align-items: baseline;
+  margin-top: 30rpx;
+}
+.ap-n {
+  font-size: 72rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  line-height: 1;
+  text-shadow: 0 0 30rpx rgba(34, 211, 238, .5);
+}
+.ap-l {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, .55);
+  margin-left: 16rpx;
+}

@@ -1,0 +1,49 @@
+{
+  "miniprogramRoot": "./",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "appid": "wxf61364cb15c58653",
+  "compileType": "miniprogram",
+  "projectname": "lab-management",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "babelSetting": {
+      "ignore": [
+        "tools/**",
+        "backup/**",
+        "test/**",
+        "preview/**"
+      ],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "tools" },
+      { "type": "folder", "value": "backup" },
+      { "type": "folder", "value": "test" },
+      { "type": "folder", "value": "preview" },
+      { "type": "suffix", "value": ".md" },
+      { "type": "suffix", "value": ".py" }
+    ],
+    "include": []
+  },
+  "editorSetting": {}
+}

@@ -1,0 +1,111 @@
+/* 出入库登记页样式 */
+.io-hero { padding: 40rpx 32rpx 44rpx; }
+
+/* 数量步进器 */
+.qty {
+  display: flex;
+  align-items: center;
+  background: #F7F9FC;
+  border: 2rpx solid #E8EDF5;
+  border-radius: 22rpx;
+  padding: 8rpx;
+  height: 92rpx;
+}
+.qty-btn {
+  width: 72rpx; height: 72rpx;
+  border-radius: 18rpx;
+  background: #FFFFFF;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2rpx 8rpx rgba(15, 35, 80, .06);
+}
+.qty-btn:active { background: #EAF1FF; }
+.qty-btn image { width: 30rpx; height: 30rpx; }
+.qty-inp {
+  flex: 1;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #0D1526;
+  height: 72rpx;
+  line-height: 72rpx;
+  min-width: 0;
+}
+
+/* 库存预览 */
+.io-preview {
+  background: #F7F9FC;
+  border-radius: 22rpx;
+  padding: 4rpx 24rpx;
+  margin-top: 8rpx;
+}
+.io-after { color: #2B6CFF; }
+
+/* 下拉箭头 */
+.picker-arrow { width: 24rpx; height: 24rpx; opacity: .5; flex-shrink: 0; }
+
+/* 新建物品入口 */
+.io-new { padding: 26rpx 28rpx; }
+
+/* 流水金额 */
+.io-amt {
+  font-size: 32rpx;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.io-amt.in { color: #059669; }
+.io-amt.out { color: #DC2626; }
+
+/* ===== 新建物品弹层 ===== */
+.nm-mask {
+  position: fixed;
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(9, 16, 32, .55);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+}
+.nm-panel {
+  width: 100%;
+  background: #F2F5FA;
+  border-radius: 40rpx 40rpx 0 0;
+  padding: 40rpx 32rpx calc(40rpx + env(safe-area-inset-bottom));
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 -12rpx 48rpx rgba(9, 16, 32, .28);
+}
+.nm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+.nm-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #0D1526;
+  letter-spacing: .5rpx;
+}
+.nm-close {
+  width: 64rpx; height: 64rpx;
+  border-radius: 50%;
+  background: #E8EDF5;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nm-close image { width: 26rpx; height: 26rpx; }
+.nm-sub {
+  font-size: 24rpx;
+  color: #6B7C96;
+  margin-bottom: 28rpx;
+  line-height: 1.6;
+}
+.req { color: #DC2626; }
+
+/* 双列字段 */
+.nm-row { display: flex; margin: 0 -10rpx; }
+.nm-col { flex: 1; margin: 0 10rpx; min-width: 0; }
+.nm-panel .inp { height: 88rpx; font-size: 27rpx; }
+.nm-panel .qty { height: 88rpx; }
+.nm-panel .qty-inp { font-size: 30rpx; }

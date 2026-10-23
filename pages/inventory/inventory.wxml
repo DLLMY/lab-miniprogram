@@ -1,0 +1,80 @@
+<view class="wk">
+  <view class="hero iv-hero">
+    <view class="hero-grid"></view>
+    <view class="hero-inner">
+      <view class="hero-t">库存一览</view>
+      <view class="hero-s">耗材与工具的实时库存、状态</view>
+      <view class="iv-counts">
+        <view class="iv-c">
+          <view class="iv-n">{{mats.length}}</view>
+          <view class="iv-l">耗材品类</view>
+        </view>
+        <view class="iv-div"></view>
+        <view class="iv-c">
+          <view class="iv-n">{{tools.length}}</view>
+          <view class="iv-l">在册工具</view>
+        </view>
+        <view class="iv-div"></view>
+        <view class="iv-c">
+          <view class="iv-n">{{lowCount}}</view>
+          <view class="iv-l">库存预警</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="page">
+    <!-- 分段切换 -->
+    <view class="seg">
+      <view class="seg-i {{tab==='mat'?'on on-cyan':''}}" bindtap="setTab" data-t="mat">耗材</view>
+      <view class="seg-i {{tab==='tool'?'on':''}}" bindtap="setTab" data-t="tool">工具</view>
+    </view>
+
+    <!-- 搜索 -->
+    <view class="search">
+      <image src="/images/ic-search-s.png" mode="aspectFit"></image>
+      <input placeholder="搜索名称或 ID" placeholder-class="search-ph" value="{{kw}}" bindinput="onKw" />
+    </view>
+
+    <view class="card mt-m">
+      <!-- 耗材 -->
+      <block wx:if="{{tab==='mat'}}">
+        <view wx:if="{{!matList.length}}" class="empty">
+          <image class="empty-ic" src="/images/ic-box-s.png" mode="aspectFit"></image>
+          <view>{{kw ? '没有匹配的耗材' : '暂无耗材数据'}}</view>
+        </view>
+        <view wx:for="{{matList}}" wx:key="id" class="list-item tap" data-id="{{item.id}}" bindtap="goDetail">
+          <view class="list-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{item.name}}</view>
+            <view class="list-sub">{{item.id}} · {{item.cat}} · {{item.loc}}</view>
+            <view class="bar"><view class="bar-in {{item.low ? 'red' : ''}}" style="width:{{item.pct}}%"></view></view>
+          </view>
+          <view class="iv-qty {{item.low ? 'low' : ''}}">
+            <view class="iv-qn">{{item.stock}}</view>
+            <view class="iv-qu">{{item.unit}}</view>
+          </view>
+        </view>
+      </block>
+
+      <!-- 工具 -->
+      <block wx:else>
+        <view wx:if="{{!toolList.length}}" class="empty">
+          <image class="empty-ic" src="/images/ic-tool-s.png" mode="aspectFit"></image>
+          <view>{{kw ? '没有匹配的工具' : '暂无工具数据'}}</view>
+        </view>
+        <view wx:for="{{toolList}}" wx:key="id" class="list-item tap" data-id="{{item.id}}" bindtap="goDetail">
+          <view class="list-ic"><image src="/images/ic-tool-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{item.name}}</view>
+            <view class="list-sub">编号 {{item.sn}}</view>
+            <view class="list-sub" wx:if="{{item.borrower}}">借用人：{{item.borrower}}</view>
+          </view>
+          <text class="pill {{item.status==='在库'?'ok':item.status==='借出'?'blue':'red'}}">{{item.status}}</text>
+        </view>
+      </block>
+    </view>
+
+    <view class="tip">数据来源：{{srcText}}</view>
+  </view>
+</view>

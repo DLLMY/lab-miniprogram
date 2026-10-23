@@ -1,0 +1,49 @@
+/* 工作台首页样式 */
+.wk-hero { padding: 36rpx 32rpx 40rpx; }
+.wk-hi {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22rpx;
+}
+.wk-hi-l { flex: 1; min-width: 0; }
+.wk-greet {
+  font-size: 25rpx;
+  color: rgba(255, 255, 255, .55);
+  margin-top: 14rpx;
+}
+.wk-hero .avatar {
+  width: 84rpx; height: 84rpx;
+  border-radius: 26rpx;
+  font-size: 34rpx;
+  background: rgba(255, 255, 255, .10);
+  border: 1rpx solid rgba(255, 255, 255, .18);
+  box-shadow: none;
+}
+
+/* 扫码 CTA */
+.wk-scan {
+  display: flex;
+  align-items: center;
+  margin-top: 34rpx;
+  padding: 26rpx 26rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, rgba(34, 211, 238, .18) 0%, rgba(43, 108, 255, .20) 100%);
+  border: 1rpx solid rgba(255, 255, 255, .16);
+}
+.wk-scan-ic { width: 52rpx; height: 52rpx; margin-right: 20rpx; flex-shrink: 0; }
+.wk-scan-t { font-size: 30rpx; font-weight: 600; color: #FFFFFF; }
+.wk-scan-s { font-size: 22rpx; color: rgba(255, 255, 255, .52); margin-top: 6rpx; }
+.wk-scan-arrow { width: 26rpx; height: 26rpx; opacity: .55; flex-shrink: 0; }
+
+/* 搜索框 */
+.search-go {
+  padding: 16rpx 28rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%);
+  color: #fff;
+  font-size: 26rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.search-ph { color: #A3AFC2; }

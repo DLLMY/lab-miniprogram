@@ -1,0 +1,130 @@
+<view class="wk">
+  <!-- ===== 深空顶区 ===== -->
+  <view class="hero wk-hero">
+    <view class="hero-grid"></view>
+    <view class="hero-inner">
+      <view class="wk-hi">
+        <view class="wk-hi-l">
+          <view class="hero-tag">{{roleText}}</view>
+          <view class="wk-greet">{{greet}}</view>
+        </view>
+        <view class="avatar" bindtap="switchAccount">{{meInitial}}</view>
+      </view>
+      <view class="hero-t">{{me ? me.name : '未登录'}}</view>
+      <view class="hero-s">{{me ? me.id : '点击右上角头像登录'}} · 智慧实训空间</view>
+
+      <view class="wk-scan" bindtap="scan">
+        <image class="wk-scan-ic" src="/images/ic-qr-w.png" mode="aspectFit"></image>
+        <view class="grow">
+          <view class="wk-scan-t">扫描物品二维码</view>
+          <view class="wk-scan-s">识别耗材 / 工具，即刻查看详情</view>
+        </view>
+        <image class="wk-scan-arrow" src="/images/ic-chevron-w.png" mode="aspectFit"></image>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 内容区 ===== -->
+  <view class="page">
+    <!-- 统计瓦片 -->
+    <view class="tiles">
+      <view class="tile tile-blue">
+        <view class="tile-n">{{matCount}}</view>
+        <view class="tile-l">耗材品类</view>
+      </view>
+      <view class="tile tile-cyan">
+        <view class="tile-n">{{toolCount}}</view>
+        <view class="tile-l">在册工具</view>
+      </view>
+      <view class="tile tile-amber">
+        <view class="tile-n">{{pendingCount}}</view>
+        <view class="tile-l">待办审批</view>
+      </view>
+    </view>
+
+    <!-- 快捷搜索 -->
+    <view class="search mt-m">
+      <image src="/images/ic-search-s.png" mode="aspectFit"></image>
+      <input placeholder="输入物品 ID 查询，如 M001 / T001" placeholder-class="search-ph" value="{{qid}}" bindinput="input" bindconfirm="go" confirm-type="search" />
+      <view class="search-go" bindtap="go">查询</view>
+    </view>
+
+    <!-- 功能入口 -->
+    <view class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">功能导航</view>
+      <view class="sec-x">Functional Modules</view>
+    </view>
+    <view class="grid">
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/inventory/inventory" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">库存一览</view>
+            <view class="grid-s">耗材与工具状态</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/approve/approve" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-clipboard-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">领用审批</view>
+            <view class="grid-s">处理学生申请</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/io/io" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-swap-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">出入库登记</view>
+            <view class="grid-s">入库出库与库存</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/io/io?tab=new" bindtap="goNewItem">
+          <view class="grid-ic"><image src="/images/ic-plus-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">物品入库</view>
+            <view class="grid-s">新物品建档入库</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/usage/usage" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-chart-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">使用概况</view>
+            <view class="grid-s">操作统计与活跃度</view>
+          </view>
+        </view>
+      </view>
+      <view class="grid-i">
+        <view class="grid-c" bindtap="switchAccount">
+          <view class="grid-ic"><image src="/images/ic-users-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">切换账号</view>
+            <view class="grid-s">重新绑定身份</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 示例物品 -->
+    <view class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">示例物品</view>
+      <view class="sec-x">Quick Access</view>
+    </view>
+    <view class="card card-tight">
+      <view class="chips">
+        <view wx:for="{{samples}}" wx:key="id" class="chip" bindtap="quick" data-id="{{item.id}}">{{item.name}}</view>
+      </view>
+      <view class="tip" style="margin-bottom:0">提示：开发者工具模拟器无摄像头，扫码会提示「请手动输入ID」，属正常现象；可点上方示例物品或直接输入 ID 测试。</view>
+    </view>
+
+    <view class="tip">演示模式：未配置云函数 / 腾讯文档时自动使用本地模拟数据，可完整体验查询、领用、借还、审批、出入库、概况全流程。</view>
+  </view>
+</view>

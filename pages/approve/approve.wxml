@@ -1,0 +1,59 @@
+<view class="wk">
+  <!-- 拦截页必须有出口：显示当前身份 + 一键切号，避免「点了没反应」的死页 -->
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">教师 / 管理员可在此审批领用申请<br />当前身份：{{me ? (me.id + '（' + me.name + '）· ' + roleText) : '未登录'}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">切换为教师 / 管理员账号</button>
+  </view>
+
+  <block wx:else>
+    <!-- 头部 -->
+    <view class="hero ap-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-t">领用审批</view>
+        <view class="hero-s">审批人：{{me.name}}（{{me.id}}）· {{roleText}}</view>
+        <view class="ap-count">
+          <view class="ap-n">{{list.length}}</view>
+          <view class="ap-l">待处理申请</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="page">
+      <view wx:if="{{list.length===0}}" class="card">
+        <view class="empty">
+          <image class="empty-ic" src="/images/ic-check-s.png" mode="aspectFit"></image>
+          <view>全部处理完毕</view>
+          <view class="tip">当前没有待审批的领用申请</view>
+        </view>
+      </view>
+
+      <view wx:for="{{list}}" wx:key="no" class="card">
+        <view class="row-between">
+          <view class="row">
+            <view class="list-ic"><image src="/images/ic-inbox-b.png" mode="aspectFit"></image></view>
+            <view class="grow">
+              <view class="list-nm">{{item.kind === 'tool' ? (item.toolId + '（工具借出）') : (item.matId + ' ×' + item.qty)}}</view>
+              <view class="list-sub">申请人 {{item.user}}</view>
+            </view>
+          </view>
+          <view class="pill blue">待审批</view>
+        </view>
+
+        <view class="kv mt-s"><text class="kv-k">申请单号</text><text class="kv-v">{{item.no}}</text></view>
+        <view class="kv"><text class="kv-k">申请时间</text><text class="kv-v">{{item.time}}</text></view>
+
+        <view class="btn-row mt-m">
+          <view class="btn-cell row">
+            <view class="btn-s pass" data-no="{{item.no}}" data-ok="1" bindtap="approve">通过</view>
+          </view>
+          <view class="btn-cell row">
+            <view class="btn-s reject" data-no="{{item.no}}" data-ok="0" bindtap="approve">拒绝</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

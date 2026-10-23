@@ -1,0 +1,52 @@
+/* 使用概况页样式 */
+.us-hero { padding: 40rpx 32rpx 44rpx; }
+.us-total {
+  margin-top: 30rpx;
+}
+.us-n {
+  font-size: 76rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  line-height: 1;
+  letter-spacing: 2rpx;
+  text-shadow: 0 0 34rpx rgba(34, 211, 238, .45);
+}
+.us-l {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, .55);
+  margin-top: 12rpx;
+}
+
+/* 排行榜行 */
+.rk {
+  display: flex;
+  align-items: flex-start;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #F0F3F8;
+}
+.rk:last-child { border-bottom: none; }
+.rk-no {
+  width: 52rpx; height: 52rpx;
+  border-radius: 18rpx;
+  margin-right: 20rpx;
+  display: flex; align-items: center; justify-content: center;
+  background: #F1F5F9;
+  color: #64748B;
+  font-size: 24rpx;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.rk-no.top {
+  background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%);
+  color: #FFFFFF;
+  box-shadow: 0 6rpx 16rpx rgba(43, 108, 255, .26);
+}
+.rk-n {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #2B6CFF;
+}
+.rk-role {
+  font-size: 22rpx;
+  color: #8A99AF;
+}

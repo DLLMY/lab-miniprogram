@@ -1,0 +1,55 @@
+<view class="login-page">
+  <view class="hero-grid"></view>
+
+  <view class="login-brand">
+    <view class="logo">
+      <image src="/images/ic-bolt-c.png" mode="aspectFit"></image>
+    </view>
+    <view class="login-t">实训室管理系统</view>
+    <view class="login-s">Lab Management · 智慧实训空间</view>
+  </view>
+
+  <view class="login-card">
+    <view class="lc-title">绑定身份</view>
+    <view class="lc-sub">首次使用请绑定微信，之后免输入直接进入</view>
+
+    <view class="field">
+      <view class="field-l">姓名</view>
+      <input class="inp" placeholder="请输入姓名，如 邓老师" placeholder-class="inp-ph" value="{{name}}" bindinput="nameInput" />
+    </view>
+    <view class="field">
+      <view class="field-l">工号</view>
+      <input class="inp" placeholder="请输入工号，如 T001" placeholder-class="inp-ph" value="{{id}}" bindinput="idInput" />
+    </view>
+
+    <button class="btn btn-primary btn-block" bindtap="submit" disabled="{{busy}}">
+      {{busy ? '绑定中…' : '绑定并登录'}}
+    </button>
+
+    <view class="lc-note">
+      <image src="/images/ic-shield-s.png" mode="aspectFit"></image>
+      <text>姓名 + 工号需与用户表一致；一个工号只绑定一个微信，一个微信只绑定一个工号。</text>
+    </view>
+  </view>
+
+  <view wx:if="{{users.length}}" class="login-accounts">
+    <view class="la-head">
+      <view class="la-title">快捷选择</view>
+      <view class="la-x">点击填入</view>
+    </view>
+    <view class="la-list">
+      <view wx:for="{{users}}" wx:key="id" class="la-item" data-u="{{item}}" bindtap="fill">
+        <view class="la-card">
+          <view class="avatar avatar-sm">{{item.initial}}</view>
+          <view class="grow">
+            <view class="list-nm">{{item.name}}</view>
+            <view class="list-sub">{{item.id}}{{item.cls ? ' · ' + item.cls : ''}}</view>
+          </view>
+          <view class="role-tag role-{{item.role === 'student' ? 'student' : item.role === 'teacher' ? 'teacher' : 'admin'}}">
+            {{item.role === 'student' ? '学生' : item.role === 'teacher' ? '教师' : '管理员'}}
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

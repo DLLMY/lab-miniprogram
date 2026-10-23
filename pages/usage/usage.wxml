@@ -1,0 +1,81 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">教师 / 管理员可查看使用概况<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">切换为教师 / 管理员账号</button>
+  </view>
+
+  <block wx:elif="{{stat}}">
+    <view class="hero us-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-t">使用概况</view>
+        <view class="hero-s">谁在使用系统 · 活跃度与操作统计</view>
+        <view class="us-total">
+          <view class="us-n">{{stat.total}}</view>
+          <view class="us-l">累计操作（次）</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="page">
+      <!-- 核心指标 -->
+      <view class="tiles">
+        <view class="tile tile-blue">
+          <view class="tile-n">{{stat.total}}</view>
+          <view class="tile-l">累计操作</view>
+        </view>
+        <view class="tile tile-cyan">
+          <view class="tile-n">{{stat.activeUsers}}</view>
+          <view class="tile-l">活跃用户</view>
+        </view>
+        <view class="tile tile-green">
+          <view class="tile-n">{{stat.teacherActive}}</view>
+          <view class="tile-l">活跃教师</view>
+        </view>
+      </view>
+
+      <!-- 教师活跃度 -->
+      <view class="card mt-m">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">教师使用明细</view>
+          <view class="sec-x">{{stat.teacherActive}} / {{stat.teacherTotal}} 位已使用</view>
+        </view>
+        <view wx:if="{{!teachers.length}}" class="empty">暂无教师记录</view>
+        <view wx:for="{{teachers}}" wx:key="user.id" class="list-item">
+          <view class="avatar avatar-sm">{{item.initial}}</view>
+          <view class="grow">
+            <view class="list-nm">{{item.user.name}}</view>
+            <view class="list-sub">{{item.last ? '最近 ' + item.last : '尚无使用记录'}}</view>
+          </view>
+          <text class="pill {{item.n ? 'ok' : 'grey'}}">{{item.n ? item.n + ' 次' : '未使用'}}</text>
+        </view>
+      </view>
+
+      <!-- 排行榜 -->
+      <view class="card">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">用户活跃排行</view>
+          <view class="sec-x">TOP {{rank.length}}</view>
+        </view>
+        <view wx:if="{{!rank.length}}" class="empty">暂无使用记录</view>
+        <view wx:for="{{rank}}" wx:key="user.id" class="rk">
+          <view class="rk-no {{index < 3 ? 'top' : ''}}">{{index + 1}}</view>
+          <view class="grow">
+            <view class="row-between">
+              <view class="list-nm">{{item.user ? item.user.name : item.id}}</view>
+              <view class="rk-n">{{item.n}} 次</view>
+            </view>
+            <view class="row-between" style="margin-top:4rpx">
+              <text class="rk-role">{{item.roleText}}</text>
+            </view>
+            <view class="bar"><view class="bar-in" style="width:{{item.pct}}%"></view></view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

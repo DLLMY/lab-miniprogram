@@ -1,0 +1,49 @@
+/* 物品详情页样式 */
+.dt-hero { padding: 40rpx 32rpx 44rpx; }
+.dt-top { display: flex; align-items: center; }
+.dt-ic {
+  width: 112rpx; height: 112rpx;
+  border-radius: 34rpx;
+  margin-right: 26rpx;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .10);
+  border: 1rpx solid rgba(255, 255, 255, .16);
+  flex-shrink: 0;
+}
+.dt-ic image { width: 56rpx; height: 56rpx; }
+.dt-name {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 14rpx;
+  letter-spacing: 1rpx;
+}
+.dt-id {
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, .48);
+  margin-top: 8rpx;
+  letter-spacing: 1rpx;
+}
+
+/* 分类瓦片：分类名可能较长，缩小字号单行显示 */
+.tile-cat { font-size: 28rpx; padding-top: 8rpx; }
+
+/* 吸底操作条 */.dt-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, .92);
+  border-top: 1rpx solid rgba(15, 35, 80, .06);
+  backdrop-filter: blur(20rpx);
+  box-shadow: 0 -6rpx 26rpx rgba(15, 35, 80, .06);
+  z-index: 20;
+}
+.dt-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 92rpx;
+  gap: 12rpx;
+}
+.dt-hint image { width: 32rpx; height: 32rpx; opacity: .6; }
+.dt-hint text { font-size: 25rpx; color: #94A3B8; }

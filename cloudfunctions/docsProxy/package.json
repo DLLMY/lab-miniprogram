@@ -1,0 +1,9 @@
+{
+  "name": "docsProxy",
+  "version": "1.0.0",
+  "description": "实训室管理系统中继层：封装腾讯文档 API",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

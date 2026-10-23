@@ -1,0 +1,17 @@
+# 本地凭证与生成物，勿提交
+tools/.env.local
+cloudfunctions/docsProxy/env.local.js
+cloudfunctions/docsProxy/nul
+
+# 依赖
+node_modules/
+cloudfunctions/*/node_modules/
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 数据备份（内测期每日生成，不入库）
+backup/

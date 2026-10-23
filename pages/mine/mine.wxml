@@ -1,0 +1,148 @@
+<view class="wk">
+  <!-- ===== 身份档案头 ===== -->
+  <view class="hero wk-hero">
+    <view class="hero-grid"></view>
+    <view class="hero-inner">
+      <view class="row">
+        <view class="avatar wk-av">{{meInitial}}</view>
+        <view class="grow wk-id">
+          <view class="wk-name">{{me ? me.name : '未登录'}}</view>
+          <view class="wk-sub">{{me ? me.id : '请先登录'}}</view>
+        </view>
+        <view class="hero-tag">{{roleText}}</view>
+      </view>
+
+      <view class="wk-src">
+        <view class="ws-dot {{srcOk ? 'ok' : 'warn'}}"></view>
+        <text class="ws-t">数据来源：{{srcText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="page">
+    <!-- 账号操作 -->
+    <view class="sec">
+      <view class="sec-bar"></view>
+      <view class="sec-t">账号</view>
+    </view>
+    <view class="card card-tight">
+      <view class="list-item tap" bindtap="switchAccount" style="margin-bottom:0;border:none;box-shadow:none;padding:12rpx 0;background:transparent">
+        <view class="list-ic"><image src="/images/ic-swap-b.png" mode="aspectFit"></image></view>
+        <view class="grow">
+          <view class="list-nm">切换 / 重新绑定账号</view>
+          <view class="list-sub">退出当前身份，回到登录页</view>
+        </view>
+        <image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
+      </view>
+    </view>
+
+    <!-- 教师功能 -->
+    <view wx:if="{{isStaff}}" class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">教师功能</view>
+      <view class="sec-x">Staff</view>
+    </view>
+    <view wx:if="{{isStaff}}" class="grid">
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/approve/approve" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-clipboard-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">领用审批</view>
+            <view class="grid-s">通过或拒绝申请</view>
+          </view>
+        </view>
+      </view>
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/io/io" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-swap-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">出入库登记</view>
+            <view class="grid-s">入库出库与库存</view>
+          </view>
+        </view>
+      </view>
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/usage/usage" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-chart-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">使用概况</view>
+            <view class="grid-s">操作统计与活跃度</view>
+          </view>
+        </view>
+      </view>
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/inventory/inventory" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">库存一览</view>
+            <view class="grid-s">耗材与工具状态</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 我的申请 -->
+    <view class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">我的申请</view>
+      <view class="sec-x">{{rs.length + bs.length}} 条记录</view>
+    </view>
+    <view class="card">
+      <view wx:if="{{rs.length===0 && bs.length===0}}" class="empty">
+        <image class="empty-ic" src="/images/ic-inbox-s.png" mode="aspectFit"></image>
+        <view>暂无申请记录</view>
+        <view class="tip">当前身份：{{me ? me.id : '未登录'}} · 数据来源：{{srcText}}</view>
+        <view wx:if="{{srcText !== '真实腾讯文档'}}" class="tip">当前为演示数据：云函数未接真实腾讯文档。请「右键 docsProxy → 上传并部署」，并确认云端 USE_MOCK=false。</view>
+      </view>
+
+      <view wx:for="{{rs}}" wx:key="no" class="list-item">
+        <view class="list-ic"><image src="/images/ic-inbox-b.png" mode="aspectFit"></image></view>
+        <view class="grow">
+          <view class="list-nm">{{item.kind === 'tool' ? ('借出工具 · ' + item.toolId) : ('领用 ×' + item.qty)}}</view>
+          <view class="list-sub">{{item.no}} · {{item.time}}</view>
+        </view>
+        <text class="pill {{item.status==='pending'?'warn':item.status==='approved'?'ok':'red'}}">
+          {{item.status==='pending'?'待审批':item.status==='approved'?'已通过':'已拒绝'}}
+        </text>
+      </view>
+
+      <view wx:for="{{bs}}" wx:key="id" class="list-item">
+        <view class="list-ic"><image src="/images/ic-tool-b.png" mode="aspectFit"></image></view>
+        <view class="grow">
+          <view class="list-nm">借出工具</view>
+          <view class="list-sub">{{item.id}} · {{item.out}}</view>
+        </view>
+        <text class="pill {{item.status==='借出'?'blue':'ok'}}">{{item.status}}</text>
+      </view>
+    </view>
+
+    <!-- 云端自检 -->
+    <view class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">系统自检</view>
+      <view class="sec-x">Diagnostics</view>
+    </view>
+    <view class="card">
+      <view class="diag-line">
+        <view class="dl-dot {{diagOk ? 'ok' : 'warn'}}"></view>
+        <text class="grow">{{diagText}}</text>
+      </view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">USE_MOCK</text><text class="kv-v">{{diag.rawUseMock}}</text></view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">文件 ID</text><text class="kv-v">{{diag.fileId}}</text></view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">凭证</text><text class="kv-v">token {{diag.accessToken || '空'}} / openid {{diag.openId || '空'}}</text></view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">token 到期</text><text class="kv-v">{{diag.tokenExp}}</text></view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">运行时</text><text class="kv-v">{{diag.node}} · {{diag.hasFetch ? 'fetch 可用' : 'https 模块（正常）'}}</text></view>
+      <view wx:if="{{diag && diag.pingError}}" class="kv"><text class="kv-k">连通错误</text><text class="kv-v">{{diag.pingError}}</text></view>
+      <button class="btn btn-ghost btn-block btn-sm mt-m" bindtap="runDiag">重新自检</button>
+    </view>
+
+    <!-- 演示数据管理 -->
+    <view wx:if="{{showReset}}" class="card card-accent">
+      <view class="title">演示数据管理</view>
+      <view class="sub">仅演示模式可用；接入真实腾讯文档后此入口自动隐藏。</view>
+      <button class="btn btn-danger btn-block mt-m" bindtap="resetDemo">重置演示数据</button>
+    </view>
+
+    <view class="tip" style="text-align:center">实训室管理系统 · Lab Management</view>
+  </view>
+</view>
