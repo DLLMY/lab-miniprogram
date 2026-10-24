@@ -7,7 +7,8 @@
     "pages/approve/approve",
     "pages/io/io",
     "pages/usage/usage",
-    "pages/inventory/inventory"
+    "pages/inventory/inventory",
+    "pages/admin-users/admin-users"
   ],
   "window": {
     "navigationBarTitleText": "实训室管理系统",

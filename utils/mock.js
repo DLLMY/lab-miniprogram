@@ -5,12 +5,10 @@
 function clone(o) { return JSON.parse(JSON.stringify(o)) }
 
 const seed = {
-  users: [
-    { id: 'S001', name: '张三', role: 'student', cls: '24电气1' },
-    { id: 'S002', name: '李四', role: 'student', cls: '24电气1' },
-    { id: 'T001', name: '邓老师', role: 'teacher', cls: '' },
-    { id: 'A001', name: '王管理员', role: 'admin', cls: '' }
-  ],
+  // 演示账号已清空：上线前不应随包分发真实工号+姓名组合（原 T001 邓老师 / A001 王管理员 等
+  // 与真实 users 表同名同号，存在凭证泄露风险）。生产走真实腾讯文档 users 表；纯 mock 模式下
+  // 登录将无可用账号（仅开发回退用，可接受）。如需本地演示，请用 tools/add-users.js 录入临时账号。
+  users: [],
   materials: [
     { id: 'M001', name: '电阻包(1kΩ)', cat: '电子耗材', unit: '包', safe: 10, stock: 25, loc: 'A柜1层' },
     { id: 'M002', name: '面包板', cat: '电子耗材', unit: '块', safe: 5, stock: 3, loc: 'A柜2层' },
@@ -188,6 +186,32 @@ function dispatch(action, data) {
         teacherTotal: teachers.length,
         rank
       })
+    }
+    case 'adminListUsers': {
+      return ok(DB.users.map(u => ({ rid: 'm_' + u.id, id: u.id, name: u.name, role: u.role, cls: u.cls || '', status: u.status || '启用', bound: false })))
+    }
+    case 'adminUpsertUser': {
+      const id = ('' + (data.id || '')).trim().toUpperCase()
+      const name = ('' + (data.name || '')).trim()
+      const role = ('' + (data.role || '')).trim().toLowerCase()
+      const cls = ('' + (data.cls || '')).trim()
+      const status = ('' + (data.status || '')).trim() || '启用'
+      if (!id || !name) return { code: 400, data: { msg: '工号和姓名必填' } }
+      if (['student', 'teacher', 'admin'].indexOf(role) < 0) return { code: 400, data: { msg: '角色非法' } }
+      if (status !== '启用' && status !== '停用') return { code: 400, data: { msg: '状态非法' } }
+      const ex = DB.users.find(x => ('' + x.id).toUpperCase() === id)
+      if (ex) { ex.name = name; ex.role = role; ex.cls = cls; ex.status = status }
+      else DB.users.push({ id, name, role, cls, status })
+      persist()
+      return ok({ id })
+    }
+    case 'adminDeleteUser': {
+      const id = ('' + (data.id || '')).trim().toUpperCase()
+      const idx = DB.users.findIndex(x => ('' + x.id).toUpperCase() === id)
+      if (idx < 0) return { code: 404, data: { msg: '该工号不存在' } }
+      DB.users.splice(idx, 1)
+      persist()
+      return ok({ id })
     }
     default:
       return { code: 404, data: { msg: 'unknown action' } }

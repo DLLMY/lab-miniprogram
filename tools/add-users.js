@@ -139,9 +139,7 @@ function parseCsv(text) {
         [td.COL.users.name]: r.name,
         [td.COL.users.role]: r.role,
         [td.COL.users.cls]: r.cls,
-        [td.COL.users.cardNo]: '',
         [td.COL.users.status]: '启用',
-        [td.COL.users.createdAt]: Date.now(),
         [td.COL.users.openid]: ''
       })
       console.log('   ✓ ' + r.id + ' ' + r.name)

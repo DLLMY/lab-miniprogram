@@ -2,7 +2,7 @@ const identity = require('../../utils/identity.js')
 const api = require('../../utils/api.js')
 
 Page({
-  data: { name: '', id: '', users: [], bound: null, busy: false },
+  data: { name: '', id: '', busy: false },
   onLoad() {
     this.bootstrap()
   },
@@ -23,25 +23,10 @@ Page({
         return
       }
     } catch (e) { /* 忽略，走姓名+工号绑定 */ }
-    // 未绑定：展示绑定表单 + 账号列表（点击仅填充，不直接登录）
-    this.setData({ bound: null })
-    await this.loadUsers()
-  },
-  async loadUsers() {
-    let list = []
-    try { list = await api.call('listUsers', {}) || [] } catch (e) { list = [] }
-    if (!list.length) list = require('../../utils/mock.js').listUsers()  // 云端不可用回落演示账号
-    // 预计算头像首字：WXML 里不支持对字符串取下标
-    list = list.map(u => Object.assign({}, u, { initial: (u.name || '?').charAt(0) }))
-    this.setData({ users: list })
+    // 未绑定：展示姓名 + 工号绑定表单（不再展示账号列表，避免泄露用户表与角色）
   },
   nameInput(e) { this.setData({ name: e.detail.value }) },
   idInput(e) { this.setData({ id: e.detail.value }) },
-  // 点演示账号 → 仅填充姓名/工号，再由用户点「绑定并登录」，避免误绑
-  fill(e) {
-    const u = e.currentTarget.dataset.u
-    this.setData({ name: u.name, id: u.id })
-  },
   async submit() {
     if (this.data.busy) return
     const name = (this.data.name || '').trim()

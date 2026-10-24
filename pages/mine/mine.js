@@ -4,7 +4,7 @@ const identity = require('../../utils/identity.js')
 const mock = require('../../utils/mock.js')
 
 Page({
-  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isDemo: false, showReset: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false },
+  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isDemo: false, showReset: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false },
 
   // 云端自检：直接问云函数「你现在跑的是 mock 还是真腾讯文档」，并把结果摊在页面上
   async runDiag() {
@@ -36,6 +36,7 @@ Page({
       meInitial: i && i.name ? i.name.charAt(0) : '?',
       roleText: i ? identity.roleText(i.role) : '未登录',
       isStaff: identity.isStaff(),
+      isAdmin: identity.isAdmin(),
       isDemo: !!(app && app.globalData && app.globalData.DEMO)
     })
     await this.runDiag()

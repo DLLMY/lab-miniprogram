@@ -1,0 +1,72 @@
+<view class="page">
+  <view class="sec">
+    <view class="sec-bar"></view>
+    <view class="sec-t">用户与角色</view>
+    <view class="sec-x">{{users.length}} 人</view>
+  </view>
+
+  <view class="row-between mb-m">
+    <view class="muted">仅管理员可见 · 数据存于用户表</view>
+    <button class="btn btn-primary btn-sm" bindtap="openAdd">+ 新增用户</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{users.length===0}}" class="empty">
+    <image class="empty-ic" src="/images/ic-users-s.png" mode="aspectFit"></image>
+    <view>暂无用户，点右上角新增</view>
+  </view>
+
+  <view wx:for="{{users}}" wx:key="rid" class="u-card">
+    <view class="list-ic"><image src="/images/ic-user-b.png" mode="aspectFit"></image></view>
+    <view class="grow">
+      <view class="u-line">
+        <text class="u-name">{{item.name}}</text>
+        <text class="role-tag {{item.role==='admin'?'role-admin':item.role==='teacher'?'role-teacher':'role-student'}}">{{item.role==='admin'?'管理员':item.role==='teacher'?'教师':'学生'}}</text>
+        <text class="pill {{item.status==='停用'?'grey':'ok'}}">{{item.status||'启用'}}</text>
+        <text wx:if="{{item.bound}}" class="pill cyan">已绑微信</text>
+      </view>
+      <view class="u-sub">工号 {{item.id}}<text wx:if="{{item.cls}}"> · 班级 {{item.cls}}</text></view>
+    </view>
+    <view class="u-ops">
+      <view class="u-op" data-u="{{item}}" bindtap="openEdit">编辑</view>
+      <view class="u-op danger" data-u="{{item}}" bindtap="del">删除</view>
+    </view>
+  </view>
+
+  <!-- 新增 / 编辑 底部弹层 -->
+  <view wx:if="{{showForm}}" class="mask" bindtap="closeForm">
+    <view class="sheet" catchtap="noop">
+      <view class="title">{{editing ? '编辑用户' : '新增用户'}}</view>
+
+      <view class="field">
+        <view class="field-l">工号 <text class="muted">(新增后不可修改，作为账号主键)</text></view>
+        <input class="inp" value="{{form.id}}" placeholder="如 T001 / S002" disabled="{{editing}}" bindinput="onId" />
+      </view>
+      <view class="field">
+        <view class="field-l">姓名</view>
+        <input class="inp" value="{{form.name}}" placeholder="真实姓名" bindinput="onName" />
+      </view>
+      <view class="field">
+        <view class="field-l">角色</view>
+        <picker mode="selector" range="{{roleLabels}}" value="{{roleIndex}}" bindchange="onRole">
+          <view class="picker-inp">{{roleLabels[roleIndex]}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-l">班级</view>
+        <input class="inp" value="{{form.cls}}" placeholder="选填，如 23电子1班" bindinput="onCls" />
+      </view>
+      <view class="field">
+        <view class="field-l">状态</view>
+        <picker mode="selector" range="{{statusLabels}}" value="{{statusIndex}}" bindchange="onStatus">
+          <view class="picker-inp">{{statusLabels[statusIndex]}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+        </picker>
+      </view>
+
+      <view class="btn-row mt-m">
+        <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeForm">取消</button></view>
+        <view class="btn-cell"><button class="btn btn-primary" bindtap="save">保存</button></view>
+      </view>
+    </view>
+  </view>
+</view>

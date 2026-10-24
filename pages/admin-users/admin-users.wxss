@@ -1,0 +1,44 @@
+/* pages/admin-users/admin-users.wxss · 复用 app.wxss 设计系统，仅补充页面专属类 */
+.mb-m { margin-bottom: 24rpx; }
+
+.u-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 26rpx;
+  border-radius: 24rpx;
+  margin-bottom: 16rpx;
+  background: #FFFFFF;
+  border: 1rpx solid rgba(15, 35, 80, .05);
+  box-shadow: 0 6rpx 20rpx rgba(15, 35, 80, .04);
+}
+.u-line { display: flex; align-items: center; gap: 12rpx; flex-wrap: wrap; }
+.u-name { font-size: 29rpx; font-weight: 600; color: #0D1526; }
+.u-sub { font-size: 23rpx; color: #8A99AF; margin-top: 6rpx; }
+.u-ops { display: flex; flex-direction: column; gap: 12rpx; flex-shrink: 0; }
+.u-op {
+  font-size: 25rpx;
+  color: #2B6CFF;
+  padding: 8rpx 22rpx;
+  border-radius: 14rpx;
+  background: #F1F6FF;
+  text-align: center;
+}
+.u-op.danger { color: #DC2626; background: rgba(239, 68, 68, .10); }
+
+/* 底部弹层 */
+.mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 16, 32, .45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 50;
+}
+.sheet {
+  width: 100%;
+  background: #FFFFFF;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 36rpx 32rpx;
+  padding-bottom: calc(36rpx + env(safe-area-inset-bottom));
+}

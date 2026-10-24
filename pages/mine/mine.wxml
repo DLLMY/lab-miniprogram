@@ -81,6 +81,24 @@
       </view>
     </view>
 
+    <!-- 系统管理（仅管理员） -->
+    <view wx:if="{{isAdmin}}" class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">系统管理</view>
+      <view class="sec-x">Admin</view>
+    </view>
+    <view wx:if="{{isAdmin}}" class="grid">
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/admin-users/admin-users" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-users-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">用户与角色</view>
+            <view class="grid-s">账号录入与权限</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <!-- 我的申请 -->
     <view class="sec mt-l">
       <view class="sec-bar"></view>

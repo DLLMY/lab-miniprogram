@@ -161,7 +161,9 @@ const TR = {
   borrowRev: { '借出中': '借出', '已归还': '已还' },
   ioFwd: { in: '入库', out: '出库' },
   ioRev: { '入库': 'in', '出库': 'out' },
-  role: { '学生': 'student', '教师': 'teacher', '管理员': 'admin', 'student': 'student', 'teacher': 'teacher', 'admin': 'admin' }
+  role: { '学生': 'student', '教师': 'teacher', '管理员': 'admin', 'student': 'student', 'teacher': 'teacher', 'admin': 'admin' },
+  // 英文角色 → 中文存储（腾讯文档「角色」列存中文；normUser 反向读回英文）
+  roleFwd: { student: '学生', teacher: '教师', admin: '管理员' }
 }
 
 // ============================================================
@@ -657,7 +659,7 @@ async function listPending() {
 // ============================================================
 // 5.5 登录鉴权（身份来源 = 云端 users 表，不再用本地 mock）
 //   - findUser(工号)：老师/学生用工号登录；未录入或停用 → null
-//   - listUsers()：登录页账号列表
+//   - listUsers()：仅管理员可调用（prodHandler 已服务端拦截非管理员），登录页不再使用
 //   - openid 绑定 + whoami(openid)：首次工号登录绑定微信 openid，之后免输工号自动登录
 // ============================================================
 // 只回前端安全字段，openid 等内部信息不下发
@@ -718,6 +720,72 @@ async function findUserByOpenId(openid) {
 
 async function whoami(openid) {
   return openid ? await findUserByOpenId(openid) : null
+}
+
+// ============================================================
+// 5.6 用户管理（仅管理员）：adminListUsers / adminUpsertUser / adminDeleteUser
+//   - 列表返回 rid（腾讯文档行 ID）供前端定位；openid 等内部信息不下发，只回 bound 布尔。
+//   - 以「工号」为业务主键，upsert 不改动工号本身，避免破坏领用/借还记录里的申请人引用。
+//   - 删除不级联清理历史记录（保留工号引用便于审计溯源）。
+// ============================================================
+async function adminListUsers() {
+  const list = await getRecords('users')
+  return list
+    .map(r => {
+      const u = normUser(r.fields)
+      return {
+        rid: r.recordId,
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        cls: u.cls,
+        status: u.status,
+        bound: !!(u.openid && ('' + u.openid).trim())
+      }
+    })
+    .filter(u => !!(u.id && ('' + u.id).trim())) // 跳过完全空白的行
+}
+
+async function adminUpsertUser(data) {
+  data = data || {}
+  const id = ('' + (data.id || '')).trim().toUpperCase()
+  const name = ('' + (data.name || '')).trim()
+  const role = ('' + (data.role || '')).trim().toLowerCase()
+  const cls = ('' + (data.cls || '')).trim()
+  const status = ('' + (data.status || '')).trim() || '启用'
+  if (!id || !name) return { code: 400, data: { msg: '工号和姓名必填' } }
+  const ROLES = ['student', 'teacher', 'admin']
+  if (ROLES.indexOf(role) < 0) return { code: 400, data: { msg: '角色必须是 student / teacher / admin 之一' } }
+  if (status !== '启用' && status !== '停用') return { code: 400, data: { msg: '状态必须是 启用 / 停用' } }
+  // 防御性：确保 users 表 openid 列存在（登录绑定所需；已存在则 no-op）
+  await ensureOpenIdColumn()
+
+  const list = await getRecords('users', r => ('' + (r.fields[COL.users.id] || '')).trim().toUpperCase() === id)
+  const rec = list[0]
+  const fields = {
+    [COL.users.id]: id,
+    [COL.users.name]: name,
+    [COL.users.role]: TR.roleFwd[role] || role,
+    [COL.users.cls]: cls,
+    [COL.users.status]: status
+  }
+  if (rec) {
+    await updateRecord('users', rec.recordId, fields)
+    return { id, updated: true }
+  }
+  await addRecord('users', fields)
+  return { id, created: true }
+}
+
+async function adminDeleteUser(data, meId) {
+  const id = ('' + (data && data.id || '')).trim().toUpperCase()
+  if (!id) return { code: 400, data: { msg: '工号必填' } }
+  if (meId && id === ('' + meId).toUpperCase()) return { code: 400, data: { msg: '不能删除当前登录的管理员账号' } }
+  const list = await getRecords('users', r => ('' + (r.fields[COL.users.id] || '')).trim().toUpperCase() === id)
+  const rec = list[0]
+  if (!rec) return { code: 404, data: { msg: '该工号不存在' } }
+  await deleteRecordByIds('users', [rec.recordId])
+  return { id }
 }
 
 // 绑定登录：姓名 + 工号命中 users 表 → 把当前微信 openid 绑到该工号，之后可免输入自动登录。
@@ -1046,8 +1114,23 @@ async function snapshot() {
     getRecords('requisitions'), getRecords('borrow'), getRecords('stock_io'),
     getRecords('access'), getRecords('logs')
   ])
+  // 用户与角色：对齐 adminListUsers 的富形态（含 rid / bound，不下发 openid），并附角色汇总，
+  // 使全量快照成为管理员的系统全景入口（与「用户与角色」管理页同源）。
+  const userList = users
+    .map(r => {
+      const u = normUser(r.fields)
+      return {
+        rid: r.recordId,
+        id: u.id, name: u.name, role: u.role, cls: u.cls,
+        status: u.status,
+        bound: !!(u.openid && ('' + u.openid).trim())
+      }
+    })
+    .filter(u => !!(u.id && ('' + u.id).trim())) // 跳过完全空白的行
+  const usersByRole = userList.reduce((acc, u) => { acc[u.role] = (acc[u.role] || 0) + 1; return acc }, {})
   return {
-    users: users.map(r => normUser(r.fields)),
+    users: userList,
+    usersByRole,
     materials: materials.map(r => ({ ...normMaterial(r.fields), qr: r.fields[COL.materials.id] })),
     tools: tools.map(r => normTool(r.fields)),
     requisitions: requisitions.map(r => normReq(r.fields)),
@@ -1068,6 +1151,7 @@ module.exports = {
   invalidateCache, cacheStats,
   listMaterials, listTools, listMine, listPending,
   findUser, listUsers, ensureOpenIdColumn, bindOpenId, findUserByOpenId, whoami, bindLogin,
+  adminListUsers, adminUpsertUser, adminDeleteUser,
   requisition, toolRequisition, approve, io, borrow, returnTool, access, usage, snapshot,
   addMaterial, listStockIO
 }

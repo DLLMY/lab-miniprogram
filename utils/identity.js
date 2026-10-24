@@ -109,9 +109,16 @@ function isStaff() {
   return normalizeRole(i.role) !== 'student'
 }
 
+// 是否管理员：仅 role === 'admin' 为真（用户与角色管理等后台功能据此对前端隐藏入口）
+function isAdmin() {
+  const i = current()
+  if (!i) return false
+  return normalizeRole(i.role) === 'admin'
+}
+
 function roleText(role) {
   const r = normalizeRole(role)
   return r === 'teacher' ? '教师' : r === 'admin' ? '管理员' : '学生'
 }
 
-module.exports = { current, lookup, login, loginWithUser, logout, switchAccount, syncGlobal, isStaff, roleText, normalizeRole }
+module.exports = { current, lookup, login, loginWithUser, logout, switchAccount, syncGlobal, isStaff, isAdmin, roleText, normalizeRole }

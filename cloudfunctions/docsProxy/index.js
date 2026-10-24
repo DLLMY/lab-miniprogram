@@ -24,12 +24,12 @@ console.log('[docsProxy] 启动：USE_MOCK=' + USE_MOCK
   + ' 凭证=' + (HAS_CREDENTIAL ? '4项齐全' : '缺失(将走mock)'))
 
 /* ===================== 内存 mock（演示用，不持久） ===================== */
+/* 注意：演示模式刻意不做服务端鉴权（无 openid 概念，whoami 恒返回 null）；
+   真实鉴权仅在 prodHandler 中生效，详见切换处 USE_MOCK 三元判断。 */
 const seed = {
-  users: [
-    { id: 'S001', name: '张三', role: 'student' },
-    { id: 'T001', name: '邓老师', role: 'teacher' },
-    { id: 'A001', name: '王管理员', role: 'admin' }
-  ],
+  // 演示账号已清空：仅 USE_MOCK 模式使用，不应内置真实工号+姓名（与真实 users 表同名同号，泄露风险）。
+  // 生产走真实腾讯文档；纯 mock 模式登录将无可用账号（仅演示回退用，可接受）。
+  users: [],
   materials: [
     { id: 'M001', name: '电阻包(1kΩ)', cat: '电子耗材', unit: '包', safe: 10, stock: 25, loc: 'A柜1层' },
     { id: 'M002', name: '面包板', cat: '电子耗材', unit: '块', safe: 5, stock: 3, loc: 'A柜2层' },
@@ -153,7 +153,37 @@ function mockHandler(action, data) {
       const rank = Object.keys(byU).map(id => ({ id, ...byU[id] })).sort((a, b) => b.n - a.n)
       return ok({ total: acts.length, activeUsers: Object.keys(byU).length, teacherActive: 0, teacherTotal: 0, rank })
     }
-    case 'snapshot': return ok(JSON.parse(JSON.stringify(DB)))
+    case 'snapshot': {
+      const us = DB.users.map(u => ({ rid: 'm_' + u.id, id: u.id, name: u.name, role: u.role, cls: u.cls || '', status: u.status || '启用', bound: false }))
+      const byRole = us.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a }, {})
+      const dump = JSON.parse(JSON.stringify(DB))
+      dump.users = us
+      dump.usersByRole = byRole
+      return ok(dump)
+    }
+    // —— 用户与角色管理（演示模式不做鉴权，仅维护本地 DB）——
+    case 'adminListUsers': return ok(DB.users.map(u => ({ rid: 'm_' + u.id, id: u.id, name: u.name, role: u.role, cls: u.cls || '', status: u.status || '启用', bound: false })))
+    case 'adminUpsertUser': {
+      const id = ('' + (data.id || '')).trim().toUpperCase()
+      const name = ('' + (data.name || '')).trim()
+      const role = ('' + (data.role || '')).trim().toLowerCase()
+      const cls = ('' + (data.cls || '')).trim()
+      const status = ('' + (data.status || '')).trim() || '启用'
+      if (!id || !name) return { code: 400, data: { msg: '工号和姓名必填' } }
+      if (['student', 'teacher', 'admin'].indexOf(role) < 0) return { code: 400, data: { msg: '角色非法' } }
+      if (status !== '启用' && status !== '停用') return { code: 400, data: { msg: '状态非法' } }
+      const ex = DB.users.find(x => ('' + x.id).toUpperCase() === id)
+      if (ex) { ex.name = name; ex.role = role; ex.cls = cls; ex.status = status }
+      else DB.users.push({ id, name, role, cls, status })
+      return ok({ id })
+    }
+    case 'adminDeleteUser': {
+      const id = ('' + (data.id || '')).trim().toUpperCase()
+      const idx = DB.users.findIndex(x => ('' + x.id).toUpperCase() === id)
+      if (idx < 0) return { code: 404, data: { msg: '该工号不存在' } }
+      DB.users.splice(idx, 1)
+      return ok({ id })
+    }
     default: return { code: 404, data: { msg: 'unknown action' } }
   }
 }
@@ -163,19 +193,46 @@ async function prodHandler(action, data, openid) {
   // 预热字段映射（仅冷启动有真实成本，之后命中缓存≈0），并让首条请求顺带把各表 fieldId 缓存好，
   // 后续写操作不再逐个串行拉字段，显著缩短审批/出入库等写请求的耗时。
   await td.warmFieldMaps()
+
+  // ============ 服务端身份与权限（修复：前端越权 / IDOR）============
+  // 所有写操作与敏感读操作强制以"云函数从 openid 推导的真实身份"为准，
+  // 不再信任客户端传入的 role / user。未绑定或身份为 student 的调用者仅可访问公开接口。
+  const me = await td.whoami(openid)              // {id,name,role,cls} 或 null
+  const role = me ? me.role : null
+  const isStaff = role === 'teacher' || role === 'admin'
+  const isAdmin = role === 'admin'
+  // 防 IDOR：listMine / requisition / toolRequisition 必须先登录，
+  // 且用服务端推导的 me.id 覆盖客户端可能伪造的 user 字段。
+  if (action === 'listMine' || action === 'requisition' || action === 'toolRequisition') {
+    if (!me) return { code: 401, data: { msg: '请先登录' } }
+    if (data) data.user = me.id
+  }
+  // 角色拦截：返回非 null 即拒绝（401 未登录 / 403 角色不足）
+  const deny = (needAdmin) => {
+    if (!me) return { code: 401, data: { msg: '请先登录' } }
+    if (needAdmin && !isAdmin) return { code: 403, data: { msg: '仅管理员可操作' } }
+    if (!needAdmin && !isStaff) return { code: 403, data: { msg: '权限不足（需教师 / 管理员）' } }
+    return null
+  }
+  const gStaff = () => deny(false)
+  const gAdmin = () => deny(true)
+
   // run：业务函数成功时返回纯数据（无 code）→ 用 ok 包成 {code:0,data}；
   //      业务函数主动返回 {code:4xx,data}（如脏数据/库存不足）→ 原样返回，前端拿到明确错误而非 500。
   const run = async (fn) => {
-    const r = await fn
+    const r = await fn()   // 注意：fn 是 thunk（() => td.xxx()），必须调用；否则 r 会变成函数本身而非执行结果
     if (r && typeof r === 'object' && r.code) return r
     return ok(r)
   }
+
   switch (action) {
+    // —— 公开接口：任意已登录用户可调用，不依赖角色 ——
     case 'getItem': return run(() => td.getItem(data.id))
-    case 'listMine': return run(() => td.listMine(data.user))
-    case 'pending': return run(() => td.listPending())
     case 'listMaterials': return run(() => td.listMaterials())
     case 'listTools': return run(() => td.listTools())
+    case 'listMine': return run(() => td.listMine(data.user))
+    case 'requisition': return run(() => td.requisition(data))
+    case 'toolRequisition': return run(() => td.toolRequisition(data))
     case 'findUser': {
       const found = await td.findUser(data.id)
       if (!found) return { code: 404, data: { msg: '未找到该工号或账号未启用' } }
@@ -186,20 +243,29 @@ async function prodHandler(action, data, openid) {
       }
       return ok(found.user)
     }
-    case 'listUsers': return run(() => td.listUsers())
     case 'whoami': return run(() => td.whoami(openid))
     case 'bindLogin': return await td.bindLogin(data, openid)
-    case 'requisition': return run(() => td.requisition(data))
-    case 'toolRequisition': return run(() => td.toolRequisition(data))
-    case 'approve': return run(() => td.approve(data))
-    case 'io': return run(() => td.io(data))
-    case 'addMaterial': return run(() => td.addMaterial(data))
-    case 'listStockIO': return run(() => td.listStockIO(data))
-    case 'borrow': return run(() => td.borrow(data))
-    case 'returnTool': return run(() => td.returnTool(data))
-    case 'access': return run(() => td.access(data))
-    case 'usage': return run(() => td.usage())
-    case 'snapshot': return run(() => td.snapshot())
+
+    // —— 仅教师 / 管理员 ——
+    case 'pending': { const g = gStaff(); if (g) return g; return run(() => td.listPending()) }
+    case 'approve': { const g = gStaff(); if (g) return g; return run(() => td.approve(data)) }
+    case 'io': { const g = gStaff(); if (g) return g; return run(() => td.io(data)) }
+    case 'addMaterial': { const g = gStaff(); if (g) return g; return run(() => td.addMaterial(data)) }
+    case 'listStockIO': { const g = gStaff(); if (g) return g; return run(() => td.listStockIO(data)) }
+    case 'borrow': { const g = gStaff(); if (g) return g; return run(() => td.borrow(data)) }
+    case 'returnTool': { const g = gStaff(); if (g) return g; return run(() => td.returnTool(data)) }
+    // access 门禁：学生也会扫码开门 → 放宽到「已登录即可」（其余 staff 操作仍受 gStaff 约束）
+    case 'access': { if (!me) return { code: 401, data: { msg: '未登录' } }; return run(() => td.access(data)) }
+    case 'usage': { const g = gStaff(); if (g) return g; return run(() => td.usage()) }
+
+    // —— 仅管理员 ——
+    case 'listUsers': { const g = gAdmin(); if (g) return g; return run(() => td.listUsers()) }
+    case 'snapshot': { const g = gAdmin(); if (g) return g; return run(() => td.snapshot()) }
+    // 用户与角色管理（仅管理员）：列表/新增改/删除
+    case 'adminListUsers': { const g = gAdmin(); if (g) return g; return run(() => td.adminListUsers()) }
+    case 'adminUpsertUser': { const g = gAdmin(); if (g) return g; return run(() => td.adminUpsertUser(data)) }
+    case 'adminDeleteUser': { const g = gAdmin(); if (g) return g; return run(() => td.adminDeleteUser(data, me.id)) }
+
     default: return { code: 404, data: { msg: 'unknown action' } }
   }
 }

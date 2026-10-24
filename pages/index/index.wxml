@@ -112,19 +112,6 @@
       </view>
     </view>
 
-    <!-- 示例物品 -->
-    <view class="sec mt-l">
-      <view class="sec-bar"></view>
-      <view class="sec-t">示例物品</view>
-      <view class="sec-x">Quick Access</view>
-    </view>
-    <view class="card card-tight">
-      <view class="chips">
-        <view wx:for="{{samples}}" wx:key="id" class="chip" bindtap="quick" data-id="{{item.id}}">{{item.name}}</view>
-      </view>
-      <view class="tip" style="margin-bottom:0">提示：开发者工具模拟器无摄像头，扫码会提示「请手动输入ID」，属正常现象；可点上方示例物品或直接输入 ID 测试。</view>
-    </view>
-
     <view class="tip">演示模式：未配置云函数 / 腾讯文档时自动使用本地模拟数据，可完整体验查询、领用、借还、审批、出入库、概况全流程。</view>
   </view>
 </view>

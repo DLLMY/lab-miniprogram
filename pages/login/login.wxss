@@ -93,35 +93,3 @@
 }
 .lc-note image { width: 30rpx; height: 30rpx; margin-right: 14rpx; flex-shrink: 0; opacity: .7; }
 .lc-note text { font-size: 22rpx; color: rgba(255, 255, 255, .40); line-height: 1.7; }
-
-/* 快捷账号 */
-.login-accounts {
-  position: relative;
-  z-index: 2;
-  margin-top: 44rpx;
-}
-.la-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 20rpx;
-}
-.la-title { font-size: 27rpx; color: rgba(255, 255, 255, .82); font-weight: 600; }
-.la-x { font-size: 22rpx; color: rgba(255, 255, 255, .34); }
-.la-list { display: flex; flex-wrap: wrap; margin: 0 -8rpx; }
-.la-item {
-  width: 50%;
-  padding: 8rpx;
-  box-sizing: border-box;
-}
-.la-card {
-  display: flex;
-  align-items: center;
-  background: rgba(255, 255, 255, .05);
-  border: 1rpx solid rgba(255, 255, 255, .08);
-  border-radius: 24rpx;
-  padding: 18rpx 20rpx;
-}
-.la-item .list-nm { color: #FFFFFF; font-size: 27rpx; }
-.la-item .list-sub { color: rgba(255, 255, 255, .42); }
-.la-item .role-tag { margin-left: 8rpx; }

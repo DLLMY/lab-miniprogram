@@ -1,16 +1,6 @@
 const identity = require('../../utils/identity.js')
 const api = require('../../utils/api.js')
 
-// 首页示例物品（与 mock 种子一致，便于演示快速跳转）
-const SAMPLES = [
-  { id: 'M001', name: '电阻包' },
-  { id: 'M002', name: '面包板' },
-  { id: 'M003', name: '杜邦线' },
-  { id: 'T001', name: '万用表' },
-  { id: 'T002', name: '电烙铁' },
-  { id: 'T003', name: '示波器' }
-]
-
 Page({
   data: {
     me: null,
@@ -21,8 +11,7 @@ Page({
     greet: '你好',
     matCount: 0,
     toolCount: 0,
-    pendingCount: 0,
-    samples: SAMPLES
+    pendingCount: 0
   },
   onShow() {
     const i = identity.current()
@@ -80,9 +69,6 @@ Page({
     const id = (this.data.qid || '').trim().toUpperCase()
     if (id) wx.navigateTo({ url: '/pages/detail/detail?id=' + id })
     else wx.showToast({ title: '请输入物品ID', icon: 'none' })
-  },
-  quick(e) {
-    wx.navigateTo({ url: '/pages/detail/detail?id=' + e.currentTarget.dataset.id })
   },
   // 统一跳转：库存一览 / 教师功能页都走这里，url 由 wxml 的 data-url 给定
   goStaff(e) {
