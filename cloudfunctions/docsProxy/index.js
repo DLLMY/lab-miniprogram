@@ -1025,6 +1025,14 @@ exports.main = async (event) => {
   }
   const { action, ...data } = evt || {}
 
+  // HTTP 触发（CloudBase HTTP trigger）检测：此类 event 带 httpMethod，外部分发器
+  // 要求返回 {statusCode,headers,body} 才能被正确回传；微信 wx.cloud.callFunction 触发的
+  // event 无 httpMethod，按原信封 {code,data,...} 返回即可。两者共用同一份业务逻辑。
+  const isHttpTrigger = !!(event && event.httpMethod)
+  const finish = (r) => isHttpTrigger
+    ? { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r) }
+    : r
+
   // 可信机器通道（WorkBuddy 自然语言操作）：
   //   • 外部 HTTP 调用（openid 为空）且 body 携带 robotKey 时启用；微信端调用走 openid，互不影响。
   //   • robotKey 命中全局 ROBOT_KEY → 管理员应急超级通道（robotMode='super'，身份=ROBOT_ACTOR_ID）。
@@ -1057,7 +1065,7 @@ exports.main = async (event) => {
     if (!diagMe && robotMode === 'key') {
       try { const fu = await primaryTd.findUserByRobotKey(robotPayload); if (fu && fu.user) diagMe = fu.user } catch (_) {}
     }
-    if (!diagMe) return { code: 401, data: { msg: '请先登录' } }
+    if (!diagMe) return finish({ code: 401, data: { msg: '请先登录' } })
     const diagAdmin = diagMe.role === 'admin' || diagMe.role === 'super'
     const info = Object.assign({
       backend: PRIMARY,
@@ -1091,7 +1099,7 @@ exports.main = async (event) => {
       info.ping = 'skipped(当前是mock模式，未尝试连后端)'
     }
     console.log('[docsProxy] diag →', JSON.stringify(info))
-    return { code: 0, src: USE_MOCK ? 'mock' : 'cloud', backend: PRIMARY, data: info }
+    return finish({ code: 0, src: USE_MOCK ? 'mock' : 'cloud', backend: PRIMARY, data: info })
   }
 
   // ===== 冗余分发：按回退链依次尝试，任一后端抛异常即切下一个，避免程序崩溃 =====
@@ -1109,7 +1117,7 @@ exports.main = async (event) => {
       }
       console.log('[docsProxy] action=' + action + ' → backend=' + bk.kind
         + (i > 0 ? ' (回退)' : '') + ' src=' + (r.src || '?'))
-      return r
+      return finish(r)
     } catch (e) {
       lastErr = e
       console.error('[docsProxy] backend=' + bk.kind + ' 处理 action=' + action + ' 抛错：'
@@ -1118,5 +1126,5 @@ exports.main = async (event) => {
     }
   }
   // 所有后端均失败：返回结构化错误，进程不崩
-  return { code: 500, data: { msg: (lastErr && lastErr.message) || '所有数据后端均不可用' }, src: 'mock', backend: 'none', fallback: true }
+  return finish({ code: 500, data: { msg: (lastErr && lastErr.message) || '所有数据后端均不可用' }, src: 'mock', backend: 'none', fallback: true })
 }
