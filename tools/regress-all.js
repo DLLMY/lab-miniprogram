@@ -19,7 +19,9 @@ const SUITES = [
   ['数据后端冗余开关（免改代码热切换 + 自动回退）', 'test-backend-switch.js'],
   ['云数据库适配器 clouddb（CRUD + 业务函数契约）', 'test-clouddb-adapter.js'],
   ['后端契约一致性（clouddb ↔ tencentdocs 导出键）', 'test-backend-parity.js'],
-  ['数据迁移（腾讯文档→云库 中文列名→英文 key）', 'test-migrate.js']
+  ['数据迁移（腾讯文档→云库 中文列名→英文 key）', 'test-migrate.js'],
+  ['WorkBuddy 连接器 L1 写确认门（真实子进程端到端）', 'test-robot-write.js'],
+  ['WorkBuddy 连接器 Phase4 多轮记忆编排', 'test-robot-memory.js']
 ]
 
 const NODE = process.execPath

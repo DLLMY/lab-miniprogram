@@ -84,7 +84,7 @@ CloudBase 集合读取 → 返回 {code:0, data}
 
 ## 四、能力范围与验证
 
-**只读（直接执行）**：`lab_query` 支持 `getItem / listMaterials / listTools / pending / usage / listLabs / listRepairs / listInspections / alerts`；另有 `lab_diag`（运行态）、`lab_overview`（按实训室汇总）。
+**只读（直接执行）**：`lab_query` 支持 `getItem / listMaterials / listTools / pending / usage / listLabs / listRepairs / listInspections / alerts`；另有 `lab_diag`（运行态）、`lab_overview`（按实训室汇总）、`lab_context`（读会话记忆）、`lab_forget`（清会话记忆）。
 - `alerts`（预警聚合）：一次返回 `lowStock`（低于预警线物料）、`overdueInspections`（逾期巡检）、`pendingApprovals`（待审批领用）三项，供每日推送使用，避免逐表查询。
 
 **写操作（L1 确认门）**：`lab_write` 支持 `requisition / toolRequisition / cancelReq / io / borrow / returnTool / approve / addMaterial / stocktake / addRepair / updateRepair / addInspection / updateInspection`。
@@ -119,10 +119,10 @@ CloudBase 集合读取 → 返回 {code:0, data}
 | 阶段 | 能力 | 关键改动 | 状态 |
 |---|---|---|---|
 | **L3 主动服务扩展** | 推送从「全量预警」细分为「按实训室 / 按负责人」订阅；逾期前 N 天提醒；审批超时升级提醒 | 后端 `alerts` 增加 `labId` / `owner` 维度过滤；自动化按订阅路由 | 规划中 |
-| **L4 语音输入** | 教师用语音说「查一下 A 柜电阻够不够」→ 自动转写并走同一 `lab_query`/`lab_write` 链路 | 复用 WorkBuddy 语音输入 + 现有连接器，无需改后端 | 待接入 |
-| **L4 多轮记忆编排** | 跨轮次记住「我正在处理 L001 那张报修」「上次查的是电阻类」，无需重复上下文 | 连接器侧维护 `robotSessions`（会话级上下文）；或落 `robotMemory` 集合做长期记忆 | 设计阶段 |
+| **L4 语音输入** | 教师用语音说「查一下 A 柜电阻够不够」→ 自动转写并走同一 `lab_query`/`lab_write` 链路 | 复用 WorkBuddy 语音输入 + 现有连接器，无需改后端 | ✅ 已可用（WorkBuddy 自带语音，无需改代码） |
+| **L4 多轮记忆编排** | 跨轮次记住「我正在处理 L001 那张报修」「上次查的是电阻类」，无需重复上下文 | 连接器侧维护会话上下文（`lab_context`/`lab_forget`），仅缓存锚点实体 id/名称，绝不缓存密钥/明文 | ✅ 已实现 |
 
-> L4 多轮记忆的安全原则：记忆仅缓存「最近操作的单据号 / 过滤条件」等**非敏感上下文**，绝不缓存密钥或个人明文；会话结束即清空，长期记忆需教师主动「记住此偏好」并经确认门。
+> 多轮记忆的安全原则：记忆仅缓存「最近操作的单据号 / 过滤条件 / 实训室 ID」等**非敏感上下文**，绝不缓存密钥或个人明文；调用 `lab_forget` 可随时清空，进程重启即清空。
 
 ---
 
@@ -146,7 +146,7 @@ CloudBase 集合读取 → 返回 {code:0, data}
 | `index.js` | robot 通道由「全局工号」升级为「哈希反查教师身份」；新增 `genRobotKey / revokeRobotKey / robotKeyStatus` 动作（仅微信登录态可调用）；新增 L1 写操作确认门（令牌绑定动作+参数+身份）；`ROBOT_KEY` 保留为管理员应急超级通道；新增只读 `alerts` 动作（低库存+逾期巡检+待审批聚合，供每日推送）；修复 `usage` 趋势月份桶在月末日（如 31 号）因 `setUTCMonth` 跨 30 天月溢出导致**重复计月、趋势翻倍**的 bug（已对齐 `tencentdocs` 的 `setUTCDate(1)` 写法） |
 | `utils/mock.js` | 离线模式对三个密钥动作返回友好提示（离线不支持密钥管理）；新增 `alerts` 离线同构实现 |
 | `pages/mine/*` | 「我的」页新增「个人机器人密钥」卡片：生成/重置/吊销 + 明文仅显一次 + 复制 |
-| `mcp/docs-proxy-server.js` | 新增 `lab_write`（写白名单 + L1 确认）、`lab_confirm`（携令牌二次执行）；`READ_ACTIONS` 增加 `alerts`；`WRITE_ACTIONS` 增加 `addMaterial` / `stocktake` |
+| `mcp/docs-proxy-server.js` | 新增 `lab_write`（写白名单 + L1 确认）、`lab_confirm`（携令牌二次执行）；`READ_ACTIONS` 增加 `alerts` / `lab_context` / `lab_forget`；`WRITE_ACTIONS` 增加 `addMaterial` / `stocktake`；Phase 4 多轮会话记忆编排（锚点实体缓存，隐私红线） |
 | `tools/test-robot-write.js` | 新增：驱动真实连接器走完 L1 写确认全流程（13 个写动作首调仅确认、确认后写入；读操作直达；非白名单被拒；令牌篡改 403），30 断言 |
 | `~/.workbuddy/mcp.json` | MCP 服务注册（占位环境变量，待填 HTTP_URL + 个人密钥） |
 

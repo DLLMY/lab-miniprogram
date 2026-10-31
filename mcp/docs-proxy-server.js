@@ -14,6 +14,10 @@
 //       写操作（lab_write）经此通道时，后端先返回操作摘要+确认令牌，不真正执行；用户确认后
 //       调用 lab_confirm 携令牌二次调用才写入（L1 二次确认门，防误改）。
 //
+// 多轮记忆编排（Phase 4）：连接器在进程生命周期内维护轻量会话上下文（lab_context / lab_forget），
+//       记录最近查询解析出的锚点实体（实训室/物料/报修单号），供 LLM 消解模糊追问。
+//       语音输入直接复用 WorkBuddy 自带语音能力，无需改后端。
+//
 // 传输：通过 CloudBase HTTP 触发地址 POST JSON。云函数 index.js 已兼容
 //       event.body 为 JSON 字符串（H5 页同一条路）。
 //
@@ -110,6 +114,22 @@ const TOOLS = [
       type: 'object',
       properties: { id: { type: 'string', description: '可选：lab_write 返回的确认码' } }
     }
+  },
+  {
+    name: 'lab_context',
+    description: '读取当前会话记忆：最近查询解析出的锚点实体（如实训室 ID、物料关键词、报修单号）。用于消解模糊追问（如"那它的报修呢？"）。只读，不触碰业务数据。',
+    inputSchema: {
+      type: 'object',
+      properties: { sessionId: { type: 'string', description: '可选：会话标识，默认当前会话' } }
+    }
+  },
+  {
+    name: 'lab_forget',
+    description: '清除当前（或指定）会话记忆。涉及隐私或话题切换时调用，确保后续不沿用旧锚点。',
+    inputSchema: {
+      type: 'object',
+      properties: { sessionId: { type: 'string', description: '可选：会话标识，默认当前会话' } }
+    }
   }
 ]
 
@@ -196,7 +216,7 @@ async function doCallRaw(action, params) {
   } catch (e) { return null }
 }
 
-async function doConfirm(idArg) {
+async function doConfirm(idArg, sessionId) {
   let key = null
   if (idArg && _pending.has(idArg)) key = idArg
   else { const keys = Array.from(_pending.keys()); if (keys.length) key = keys[keys.length - 1] }
@@ -205,7 +225,47 @@ async function doConfirm(idArg) {
   const r = await doCall(entry.action, entry.params, entry.token)
   _pending.delete(key)
   if (r.error) return r
+  recordContext(getSession(sessionId), entry.action, entry.params, r.text || '操作完成。')
   return { text: r.text || '操作完成。' }
+}
+
+// —— 多轮记忆编排（Phase 4）——
+// 连接器在进程生命周期内维护轻量会话上下文：记录最近查询解析出的「锚点实体」
+// （实训室/物料/报修单号等），供 WorkBuddy LLM 消解模糊追问（如"那它的报修呢？"）。
+// 隐私红线：只缓存业务实体 id/名称（来自查询参数与结果摘要），绝不缓存密钥/明文 robotKey。
+const sessions = new Map()
+const DEFAULT_SESSION = process.env.LAB_SESSION_ID || 'default'
+function getSession(id) {
+  const key = (id && String(id).trim()) || DEFAULT_SESSION
+  if (!sessions.has(key)) sessions.set(key, { anchors: {}, last: null, history: [] })
+  return sessions.get(key)
+}
+function recordContext(session, action, params, resultText) {
+  const p = params || {}
+  const a = session.anchors
+  if (p.labId) a.labId = p.labId
+  if (p.labName) a.labName = p.labName
+  if (p.matId || p.materialId) a.materialId = p.matId || p.materialId
+  if (p.keyword) a.materialKeyword = p.keyword
+  if (p.repairId || p.no) a.repairId = p.repairId || p.no
+  if (p.toolId) a.toolId = p.toolId
+  if (p.cls) a.cls = p.cls
+  session.last = { action, params: p, summary: (typeof resultText === 'string' ? resultText : '').slice(0, 240) }
+  session.history.push({ action, at: Date.now() })
+  if (session.history.length > 12) session.history.shift()
+}
+function summarizeContext(session) {
+  const a = session.anchors
+  const parts = []
+  if (a.labId) parts.push('实训室=' + a.labId + (a.labName ? '(' + a.labName + ')' : ''))
+  if (a.materialId) parts.push('物料=' + a.materialId)
+  if (a.materialKeyword) parts.push('物料关键词=' + a.materialKeyword)
+  if (a.repairId) parts.push('报修/单号=' + a.repairId)
+  if (a.toolId) parts.push('工具=' + a.toolId)
+  if (a.cls) parts.push('班级=' + a.cls)
+  const last = session.last ? ('上次操作=' + session.last.action) : '无'
+  return '当前会话上下文：' + (parts.length ? parts.join('；') + '。' : '（暂无锚点实体）。') + last +
+    '。\n如需消解模糊追问（如"它的报修呢"），请据此补全参数后调用对应工具（例如用 labId 调 listRepairs）。'
 }
 
 async function handleToolCall(id, params) {
@@ -216,6 +276,7 @@ async function handleToolCall(id, params) {
   else if (name === 'lab_overview') {
     if (!args.labId) return send({ jsonrpc: '2.0', id, error: { code: -32602, message: 'lab_overview 需要 labId 参数' } })
     out = await doCall('labOverview', { labId: args.labId })
+    if (!out.error) recordContext(getSession(args.sessionId), 'labOverview', { labId: args.labId }, out.text)
   }
   else if (name === 'lab_query') {
     const action = args.action
@@ -223,6 +284,7 @@ async function handleToolCall(id, params) {
       return send({ jsonrpc: '2.0', id, error: { code: -32602, message: 'action 不在只读白名单: ' + action + '。可选: ' + READ_ACTIONS.join(', ') } })
     }
     out = await doCall(action, args.params || {})
+    if (!out.error) recordContext(getSession(args.sessionId), action, args.params || {}, out.text)
   }
   else if (name === 'lab_write') {
     const action = args.action
@@ -231,7 +293,16 @@ async function handleToolCall(id, params) {
     }
     out = await doWrite(action, args.params || {})
   }
-  else if (name === 'lab_confirm') out = await doConfirm(args.id)
+  else if (name === 'lab_confirm') out = await doConfirm(args.id, args.sessionId)
+  else if (name === 'lab_context') {
+    const s = getSession(args.sessionId)
+    return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: summarizeContext(s) }] } })
+  }
+  else if (name === 'lab_forget') {
+    const key = (args.sessionId && String(args.sessionId).trim()) || DEFAULT_SESSION
+    sessions.delete(key)
+    return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: '已清除会话[' + key + ']记忆。' }] } })
+  }
   else return send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Unknown tool: ' + name } })
 
   if (out.error) return send({ jsonrpc: '2.0', id, error: { code: -32000, message: out.error } })
