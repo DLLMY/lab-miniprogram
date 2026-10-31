@@ -20,7 +20,9 @@ const headers = {
   'Open-Id': process.env.TENCENT_DOCS_OPEN_ID
 }
 const td = require('../cloudfunctions/docsProxy/tencentdocs.js')
-const SHEETS = { users: 'tyR05n', materials: 't2KB8x', tools: 'ti1nff', requisitions: 'tJOBvr', borrow: 'tX2nVn', stock_io: 'tAgqo0', access: 'tCvzwQ', logs: 'tzomXO' }
+// 直接用模块内的 TABLE：此前这里硬编码复制了一份 sheet_id，改表结构时两处容易漏改一处
+// （测错表/删错行都是静默的）。rawDel 的 URL 拼接仍只用这里的 key→sheetID 映射。
+const SHEETS = td.TABLE
 
 async function snapshot() {
   const snap = {}

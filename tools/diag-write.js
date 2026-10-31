@@ -1,6 +1,12 @@
-// tools/diag-write.js —— 诊断 stock_io 写入 22015：逐步加字段定位；并查看日期字段真实格式。
+// tools/diag-write.js —— 【遗留调试脚本】诊断 stock_io 写入 22015：逐步加字段定位；并查看日期字段真实格式。
+//
+// ⚠️ 注意：本脚本会往【真实】stock_io 表写 4 条「操作人=诊断」的测试行（22015 报错早在
+//    2026-10 已通过 buildValues 的字段类型分支修复，此脚本仅作历史留档）。误运行会产生
+//    脏数据，需再跑 tools/clean-stock-io.js --keep-diagnostic 之外的方式清理。
+//    确需运行：node tools/diag-write.js --yes
 const fs = require('fs')
 const path = require('path')
+const YES = process.argv.includes('--yes')
 ;(function loadEnv() {
   const f = path.join(__dirname, '.env.local')
   if (!fs.existsSync(f)) return
@@ -26,6 +32,11 @@ async function tryAdd(label, fields) {
 }
 
 ;(async () => {
+  if (!YES) {
+    console.log('本脚本会往真实 stock_io 表写入 4 条诊断行（操作人=诊断）。')
+    console.log('22015 问题已修复，正常情况下无需运行。确认要跑：node tools/diag-write.js --yes')
+    return
+  }
   // 1) 看 borrow 日期字段真实格式
   const b = await td.getRecords('borrow')
   if (b[0]) console.log('borrow 首行原始 values:', JSON.stringify(b[0].fields, null, 0))

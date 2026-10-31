@@ -47,3 +47,66 @@
   flex-shrink: 0;
 }
 .search-ph { color: #A3AFC2; }
+
+/* 搜索下拉建议 */
+.search-wrap { position: relative; }
+.search-clear {
+  width: 44rpx; height: 44rpx; line-height: 44rpx; text-align: center;
+  border-radius: 50%; color: #8A95A8; font-size: 26rpx; flex-shrink: 0;
+  background: rgba(0,0,0,.05);
+}
+.suggest-mask { position: fixed; inset: 0; z-index: 40; }
+.suggest {
+  position: absolute; top: calc(100% + 12rpx); left: 0; right: 0; z-index: 50;
+  background: #FFFFFF; border-radius: 22rpx; overflow: hidden;
+  box-shadow: 0 16rpx 48rpx rgba(20, 33, 61, .16);
+  max-height: 62vh; overflow-y: auto;
+}
+.suggest-empty { padding: 36rpx 28rpx; text-align: center; color: #8A95A8; font-size: 26rpx; }
+.suggest-item {
+  display: flex; align-items: center; padding: 22rpx 26rpx;
+  border-bottom: 1rpx solid #F0F2F6;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-ic {
+  width: 56rpx; height: 56rpx; border-radius: 16rpx; flex-shrink: 0; margin-right: 20rpx;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24rpx; font-weight: 700; color: #fff;
+}
+.suggest-ic.mat { background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%); }
+.suggest-ic.tool { background: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%); }
+.suggest-nm { font-size: 28rpx; color: #1A2238; font-weight: 600; }
+.suggest-sub { font-size: 22rpx; color: #8A95A8; margin-top: 4rpx; }
+.suggest-tag {
+  flex-shrink: 0; margin-left: 16rpx; font-size: 22rpx; color: #6B7688;
+  padding: 4rpx 14rpx; border-radius: 12rpx; background: #F3F5F9;
+}
+
+/* 库存预警卡片（P2-⑳） */
+.warn-card { border-left: 6rpx solid #DC2626; }
+
+/* 新手引导（P3-㉙） */
+.ap-mask {
+  position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(9, 20, 45, .45);
+  z-index: 60;
+  display: flex; align-items: flex-end;
+}
+.ap-panel {
+  width: 100%;
+  background: #FFFFFF;
+  border-radius: 36rpx 36rpx 0 0;
+  padding: 36rpx 32rpx calc(36rpx + env(safe-area-inset-bottom));
+}
+.ap-head { display: flex; align-items: center; margin-bottom: 10rpx; }
+.ap-title { flex: 1; font-size: 34rpx; font-weight: 700; color: #0F2350; }
+.ap-sub { font-size: 24rpx; color: #94A3B8; margin-bottom: 28rpx; }
+.gd-step {
+  padding: 18rpx 22rpx;
+  margin-bottom: 14rpx;
+  font-size: 26rpx;
+  color: #334155;
+  background: #F8FAFC;
+  border-radius: 18rpx;
+  line-height: 1.6;
+}

@@ -3,7 +3,19 @@
     <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
     <view class="guard-t">权限受限</view>
     <view class="guard-s">教师 / 管理员可查看使用概况<br />当前身份：{{roleText}}</view>
-    <button class="btn btn-primary btn-block" bindtap="switchAccount">切换为教师 / 管理员账号</button>
+    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点下方按钮退出并重新登录即可生效。</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+  </view>
+
+  <!-- 加载失败显式提示：与「暂无数据」区分，避免整页空白让人以为页面坏了 -->
+  <view wx:elif="{{loadErr}}" class="page">
+    <view class="card">
+      <view class="empty">
+        <image class="empty-ic" src="/images/ic-chart-b.png" mode="aspectFit"></image>
+        <view>统计数据加载失败</view>
+        <view class="tip">请下拉刷新重试；持续失败请检查云函数 docsProxy 是否正常部署</view>
+      </view>
+    </view>
   </view>
 
   <block wx:elif="{{stat}}">
@@ -33,6 +45,125 @@
         <view class="tile tile-green">
           <view class="tile-n">{{stat.teacherActive}}</view>
           <view class="tile-l">活跃教师</view>
+        </view>
+      </view>
+
+      <!-- ===== 业务报表（P2-㉓） ===== -->
+
+      <!-- 耗材消耗趋势（近 6 个月） -->
+      <view class="card mt-m">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">耗材收发趋势</view>
+          <view class="sec-x">近 6 个月</view>
+        </view>
+        <view class="chart">
+          <view wx:for="{{stat.trend}}" wx:key="m" class="chart-col">
+            <view class="chart-bars">
+              <view class="chart-bar in" style="height:{{item.inH}}%"></view>
+              <view class="chart-bar out" style="height:{{item.outH}}%"></view>
+            </view>
+            <view class="chart-l">{{item.short}}</view>
+          </view>
+        </view>
+        <view class="chart-legend">
+          <view class="lg"><view class="lg-dot in"></view>入库</view>
+          <view class="lg"><view class="lg-dot out"></view>出库</view>
+        </view>
+      </view>
+
+      <!-- 领用排行 Top10 -->
+      <view class="card">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">耗材领用排行</view>
+          <view class="sec-x">按累计出库量</view>
+        </view>
+        <view wx:if="{{!stat.topMaterials.length}}" class="empty">暂无出库记录</view>
+        <view wx:for="{{stat.topMaterials}}" wx:key="id" class="rk">
+          <view class="rk-no {{index < 3 ? 'top' : ''}}">{{index + 1}}</view>
+          <view class="grow">
+            <view class="row-between">
+              <view class="list-nm">{{item.name}}</view>
+              <view class="rk-n">{{item.qty}}{{item.unit}}</view>
+            </view>
+            <view class="row-between" style="margin-top:4rpx">
+              <text class="rk-role">{{item.id}} · 出库 {{item.times}} 次</text>
+            </view>
+            <view class="bar"><view class="bar-in" style="width:{{item.pct}}%"></view></view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 工具周转 -->
+      <view class="card">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">工具借用周转</view>
+          <view class="sec-x">在外 {{stat.borrow.open}} / 累计 {{stat.borrow.total}}</view>
+        </view>
+        <view wx:if="{{!stat.toolTurnover.length}}" class="empty">暂无借用记录</view>
+        <view wx:for="{{stat.toolTurnover}}" wx:key="id" class="list-item">
+          <view class="list-ic"><image src="/images/ic-tool-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{item.name}}</view>
+            <view class="list-sub">{{item.id}} · 借用 {{item.times}} 次</view>
+          </view>
+          <view class="row-block">
+            <text class="pill {{item.out ? 'blue' : 'ok'}}">{{item.out ? ('在外 ' + item.out) : '已全部归还'}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 逾期借用清单（P1-⑥ 报表侧） -->
+      <view wx:if="{{stat.overdue.length}}" class="card card-accent">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">逾期未归还</view>
+          <view class="sec-x">{{stat.overdue.length}} 件</view>
+        </view>
+        <view wx:for="{{stat.overdue}}" wx:key="id" class="list-item">
+          <view class="list-ic"><image src="/images/ic-clock-s.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{item.toolId}}</view>
+            <view class="list-sub">{{item.user}} · 应还 {{item.plan}}</view>
+          </view>
+          <text class="pill red">已逾期</text>
+        </view>
+      </view>
+
+      <!-- 低库存清单（P2-⑳ 报表侧） -->
+      <view wx:if="{{stat.lowStock.length}}" class="card">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">低于安全库存</view>
+          <view class="sec-x">{{stat.lowStock.length}} 项</view>
+        </view>
+        <view wx:for="{{stat.lowStock}}" wx:key="id" class="list-item">
+          <view class="list-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{item.name}}</view>
+            <view class="list-sub">{{item.id}} · {{item.loc || '未设位置'}}</view>
+          </view>
+          <view class="iv-qty low">
+            <view class="iv-qn">{{item.stock}}</view>
+            <view class="iv-qu">/{{item.safe}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 申请单构成 -->
+      <view class="card">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">申请单构成</view>
+          <view class="sec-x">{{stat.reqStat.pending}} 待办</view>
+        </view>
+        <view class="dist">
+          <view class="dist-i"><view class="dist-n warn">{{stat.reqStat.pending}}</view><view class="dist-l">待审批</view></view>
+          <view class="dist-i"><view class="dist-n ok">{{stat.reqStat.approved}}</view><view class="dist-l">已通过</view></view>
+          <view class="dist-i"><view class="dist-n red">{{stat.reqStat.rejected}}</view><view class="dist-l">已拒绝</view></view>
+          <view class="dist-i"><view class="dist-n grey">{{stat.reqStat.canceled}}</view><view class="dist-l">已撤销</view></view>
         </view>
       </view>
 

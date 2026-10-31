@@ -1,0 +1,48 @@
+/* 操作日志查询 */
+.lg-hero { padding: 40rpx 32rpx 44rpx; }
+.lg-total { display: flex; align-items: baseline; margin-top: 26rpx; }
+.lg-n { font-size: 60rpx; font-weight: 700; color: #FFFFFF; line-height: 1; }
+.lg-l { font-size: 24rpx; color: rgba(255, 255, 255, .55); margin-left: 16rpx; }
+
+.lg-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #F0F2F6;
+}
+.lg-row:last-child { border-bottom: none; }
+.lg-time {
+  width: 150rpx;
+  flex-shrink: 0;
+  font-size: 21rpx;
+  color: #94A3B8;
+  line-height: 1.4;
+  padding-top: 4rpx;
+}
+
+/* 筛选条（与 io 页同规格） */
+.flt { display: flex; align-items: center; gap: 12rpx; }
+.flt-i {
+  flex: 1; min-width: 0;
+  height: 68rpx; padding: 0 20rpx;
+  font-size: 25rpx; color: #0F2350;
+  background: #F8FAFC; border-radius: 18rpx;
+}
+.flt-p {
+  flex: 1; min-width: 0;
+  height: 68rpx; line-height: 68rpx;
+  padding: 0 18rpx;
+  font-size: 25rpx; color: #5A6B85;
+  background: #F8FAFC; border-radius: 18rpx;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.flt-btn {
+  flex-shrink: 0;
+  height: 68rpx; line-height: 68rpx; padding: 0 22rpx;
+  font-size: 24rpx; color: #2B6CFF;
+  background: rgba(43, 108, 255, .10); border-radius: 18rpx;
+}
+
+.more { padding: 26rpx 0; text-align: center; font-size: 25rpx; color: #2B6CFF; }
+.more.busy { color: #94A3B8; }
+.more.end { color: #B4BFCE; }

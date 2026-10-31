@@ -50,3 +50,47 @@
   font-size: 22rpx;
   color: #8A99AF;
 }
+
+/* ===== 报表：趋势柱状图（P2-㉓） ===== */
+.chart {
+  display: flex;
+  align-items: flex-end;
+  height: 220rpx;
+  padding: 12rpx 0 0;
+  gap: 10rpx;
+}
+.chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.chart-bars {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6rpx;
+}
+.chart-bar {
+  width: 22rpx;
+  min-height: 4rpx;
+  border-radius: 8rpx 8rpx 0 0;
+}
+.chart-bar.in { background: linear-gradient(180deg, #22D3EE 0%, #0891B2 100%); }
+.chart-bar.out { background: linear-gradient(180deg, #F87171 0%, #DC2626 100%); }
+.chart-l { font-size: 20rpx; color: #94A3B8; margin-top: 10rpx; }
+.chart-legend { display: flex; justify-content: center; gap: 32rpx; margin-top: 16rpx; }
+.lg { display: flex; align-items: center; font-size: 22rpx; color: #5A6B85; }
+.lg-dot { width: 18rpx; height: 18rpx; border-radius: 6rpx; margin-right: 10rpx; }
+.lg-dot.in { background: #22D3EE; }
+.lg-dot.out { background: #F87171; }
+
+/* 申请单构成分布 */
+.dist { display: flex; text-align: center; }
+.dist-i { flex: 1; }
+.dist-n { font-size: 40rpx; font-weight: 700; line-height: 1.2; }
+.dist-n.warn { color: #D97706; }
+.dist-n.ok { color: #059669; }
+.dist-n.red { color: #DC2626; }
+.dist-n.grey { color: #94A3B8; }
+.dist-l { font-size: 22rpx; color: #94A3B8; margin-top: 4rpx; }
+
+/* 借用列表右侧标签容器（避免 pill 挤压宽度） */
+.row-block { flex-shrink: 0; margin-left: 16rpx; }

@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "出入库登记", "usingComponents": {} }
+{ "navigationBarTitleText": "出入库登记", "enablePullDownRefresh": true, "usingComponents": {} }

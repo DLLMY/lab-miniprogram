@@ -54,7 +54,9 @@ const pairs = [
   ['TENCENT_DOCS_CLIENT_ID', E.TENCENT_DOCS_CLIENT_ID, '开放平台控制台「开发者信息」'],
   ['TENCENT_DOCS_ACCESS_TOKEN', E.TENCENT_DOCS_ACCESS_TOKEN, '同上，30 天有效'],
   ['TENCENT_DOCS_OPEN_ID', E.TENCENT_DOCS_OPEN_ID, '同上'],
-  ['USE_MOCK', 'false', '本项目开关，false = 走真实腾讯文档']
+  ['USE_MOCK', 'false', '本项目开关，false = 走真实腾讯文档；true = 演示模式；不设 = 自动'],
+  ['DATA_BACKEND', 'tencent', '真实后端选择：tencent(腾讯文档) | cloud(微信云数据库)'],
+  ['FALLBACK', 'on', '自动回退总开关：off = 关闭(调试)；on = 主后端异常时自动切下一个后端']
 ]
 
 console.log('=== 云函数 docsProxy · 环境变量（共 5 组，逐条「新增」粘贴）===\n')

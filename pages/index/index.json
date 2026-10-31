@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "实训室管理系统", "usingComponents": {} }
+{ "navigationBarTitleText": "实训室管理系统", "enablePullDownRefresh": true, "usingComponents": {} }

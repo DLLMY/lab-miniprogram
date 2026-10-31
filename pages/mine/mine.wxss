@@ -56,8 +56,33 @@
 }
 .dl-dot.ok { background: #10B981; }
 .dl-dot.warn { background: #F59E0B; }
+/* token 临期等硬告警：红字，视觉上与普通 warn（黄）区分 */
+.kv-warn { color: #DC2626 !important; }
+/* 自检通过与云库已连接：绿字 */
+.kv-ok { color: #059669 !important; font-weight: 600; }
 .diag-line text {
   font-size: 25rpx;
   color: #334155;
   line-height: 1.6;
+}
+
+/* 我的申请：驳回原因、撤回入口、逾期提示 */
+.list-why {
+  font-size: 22rpx;
+  color: #DC2626;
+  margin-top: 6rpx;
+  padding: 8rpx 16rpx;
+  background: rgba(239, 68, 68, .08);
+  border-radius: 12rpx;
+  display: inline-block;
+}
+.list-warn { color: #DC2626; font-weight: 600; }
+.list-act {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 8rpx 24rpx;
+  font-size: 22rpx;
+  color: #5A6B85;
+  background: #F1F5F9;
+  border-radius: 999rpx;
 }

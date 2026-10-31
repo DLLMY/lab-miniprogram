@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "待审批", "usingComponents": {} }
+{ "navigationBarTitleText": "待审批", "enablePullDownRefresh": true, "usingComponents": {} }

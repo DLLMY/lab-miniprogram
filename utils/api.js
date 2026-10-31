@@ -24,6 +24,24 @@ function cloudEnvOk() {
   }
 }
 
+// 调用超时竞速：wx.cloud.callFunction 无超时参数，弱网/云函数异常悬挂时 Promise 永不 settle，
+// 页面 showLoading 会永久转圈。这里加一道 30s 兜底（云函数自身超时上限约 20s，30s 只在平台异常时触发）。
+// 超时以 Error('__timeout__') 拒绝，与传输层失败（callFunction 的 fail）区分开，调用方分别处理。
+const CALL_TIMEOUT = 30000
+function withTimeout(p) {
+  let timer = null
+  const raced = Promise.race([
+    p,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('__timeout__')), CALL_TIMEOUT)
+    })
+  ])
+  // 竞速落定后清定时器，避免定时器泄漏；.catch 兜住 reject 分支无人处理的告警
+  raced.finally(() => clearTimeout(timer)).catch(() => {})
+  return raced
+}
+function isTimeoutErr(e) { return e && e.message === '__timeout__' }
+
 function call(action, data = {}) {
   return new Promise((resolve) => {
     let settled = false
@@ -46,10 +64,16 @@ function call(action, data = {}) {
         fallback(cloudEnvOk() ? 'wx.cloud 不可用' : '未配置云环境')
         return
       }
-      wx.cloud.callFunction({
-        name: 'docsProxy',
-        data: { action, ...data },
-        success: (res) => {
+      const cp = new Promise((res, rej) => {
+        wx.cloud.callFunction({
+          name: 'docsProxy',
+          data: { action, ...data },
+          success: res,
+          fail: rej
+        })
+      })
+      withTimeout(cp)
+        .then((res) => {
           const r = (res && res.result) || {}
           // 云函数会回 src：mock=云函数内演示数据（说明 USE_MOCK 还是 true），cloud=真实腾讯文档
           const src = r.src || '?'
@@ -67,13 +91,12 @@ function call(action, data = {}) {
           }
           console.log('[api] 云端返回 action=' + action + ' src=' + src + ' code=' + r.code + brief
             + (r.data && r.data.msg ? ' msg=' + r.data.msg : ''))
-          if (r.code === 0) done(r.data)
-          else { done(null) } // 业务错误，上层自行提示
-        },
-        fail: (err) => {
-          fallback('callFunction 失败: ' + (err && (err.errMsg || err.message)))
-        }
-      })
+          done(r.code === 0 ? r.data : null) // 业务错误，上层自行提示
+        }, (err) => {
+          fallback(isTimeoutErr(err)
+            ? '调用超时(' + CALL_TIMEOUT / 1000 + 's)'
+            : 'callFunction 失败: ' + (err && (err.errMsg || err.message)))
+        })
     } catch (e) {
       // 同步 throw（典型：未 wx.cloud.init 就调 callFunction）
       fallback('云 API 异常: ' + (e && e.message))
@@ -84,30 +107,76 @@ function call(action, data = {}) {
 // 与 call 相同，但【完整返回】{code,data,src}（业务错误也带 msg），
 // 供需要把具体错误展示给用户的场景（如绑定登录：工号不存在/姓名不符/已被其他微信绑定）。
 // 云不可用时回落 mock.dispatch 的 {code,data}；传输层失败也尽量回落 mock。
-function callFull(action, data = {}) {
+//
+// opts.noFallback（写操作必须传 true）：
+//   传输层失败（网络断/云函数未部署/超时）时【不回退 mock】——否则 mock 对写 action
+//   一律返回 {code:0}，页面会显示"登记成功/已通过/已删除"而云端什么都没写（假成功）。
+//   改为返回 {code:503,...} 让上层把真实状态告诉用户。
+//   注：仅"配了云环境但调用失败"时生效；纯本地演示（未配置 env）仍走 mock，保证导入即跑。
+function callFull(action, data = {}, opts) {
+  const noFallback = !!(opts && opts.noFallback)
+  const transportFail = () => (noFallback
+    ? { code: 503, data: { msg: '云函数调用失败（网络异常或云函数未部署），请检查网络后重试' } }
+    : null)
   return new Promise((resolve) => {
+    let settled = false
+    const done = (v) => { if (!settled) { settled = true; resolve(v) } }
+    const mockFallback = () => {
+      try { markSource('mock'); return mock.dispatch(action, data) } catch (e) { return null }
+    }
     const canCloud = cloudEnvOk() && !!wx.cloud && typeof wx.cloud.callFunction === 'function'
     if (!canCloud) {
-      try { markSource('mock'); resolve(mock.dispatch(action, data)) } catch (e) { resolve(null) }
+      done(mockFallback())
       return
     }
     try {
-      wx.cloud.callFunction({
-        name: 'docsProxy',
-        data: { action, ...data },
-        success: (res) => {
+      const cp = new Promise((res, rej) => {
+        wx.cloud.callFunction({
+          name: 'docsProxy',
+          data: { action, ...data },
+          success: res,
+          fail: rej
+        })
+      })
+      withTimeout(cp)
+        .then((res) => {
           const r = (res && res.result) || {}
           markSource(r.src === 'mock' ? 'mock' : 'cloud')
-          resolve(r)
-        },
-        fail: () => {
-          try { markSource('mock'); resolve(mock.dispatch(action, data)) } catch (e) { resolve(null) }
-        }
-      })
+          done(r)
+        }, () => {
+          // 传输层失败（网络断 / 云函数未部署 / 超时）：noFallback 时返回 503 让上层告知用户，
+          // 否则回落 mock（读操作与纯演示场景的既有语义）
+          done(noFallback ? transportFail() : mockFallback())
+        })
     } catch (e) {
-      try { markSource('mock'); resolve(mock.dispatch(action, data)) } catch (_) { resolve(null) }
+      done(noFallback ? transportFail() : mockFallback())
     }
   })
 }
 
-module.exports = { call, callFull }
+// 当前数据来源是否为本地演示（云函数未连接，或云端 USE_MOCK 仍为 true）。
+// 测试时最大的误导是「云函数明明没生效，却因为 mock 有反应而以为数据已落腾讯文档」。
+function isDemoData() {
+  try {
+    const app = getApp()
+    const src = app && app.globalData ? app.globalData.dataSource : ''
+    if (src === 'mock') return true
+    if (src === 'cloud') return false
+    // 还没有任何取数记录时，按云环境是否配置判断（未配置 env 必然走不到云端）
+    return !cloudEnvOk()
+  } catch (e) {
+    return false
+  }
+}
+
+// 写操作（登记/审批/归还/建号）入口调用：演示模式下先弹一条 2.5s 警示（不阻断流程），
+// 明确告知结果只保存在本机，避免把「本机 mock 有反应」误当成「云函数已生效」。
+function warnIfDemo() {
+  if (!isDemoData()) return
+  console.warn('[api] 演示模式写操作：结果仅保存在本机 mock，不会写入腾讯文档')
+  try {
+    wx.showToast({ title: '演示模式：仅保存在本机', icon: 'none', duration: 2500 })
+  } catch (e) { /* 忽略 */ }
+}
+
+module.exports = { call, callFull, isDemoData, warnIfDemo }

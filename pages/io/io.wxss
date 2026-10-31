@@ -109,3 +109,70 @@
 .nm-panel .inp { height: 88rpx; font-size: 27rpx; }
 .nm-panel .qty { height: 88rpx; }
 .nm-panel .qty-inp { font-size: 30rpx; }
+
+/* ===== 流水筛选条（P2-⑮） ===== */
+.flt { display: flex; align-items: center; gap: 12rpx; }
+.flt-i {
+  flex: 1; min-width: 0;
+  height: 68rpx; padding: 0 20rpx;
+  font-size: 25rpx; color: #0F2350;
+  background: #F8FAFC; border-radius: 18rpx;
+}
+.flt-p {
+  flex: 1; min-width: 0;
+  height: 68rpx; line-height: 68rpx;
+  padding: 0 18rpx;
+  font-size: 25rpx; color: #5A6B85;
+  background: #F8FAFC; border-radius: 18rpx;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.flt-btn {
+  flex-shrink: 0;
+  height: 68rpx; line-height: 68rpx; padding: 0 22rpx;
+  font-size: 24rpx; color: #2B6CFF;
+  background: rgba(43, 108, 255, .10); border-radius: 18rpx;
+}
+.flt-sum { margin-top: 16rpx; font-size: 23rpx; color: #94A3B8; }
+
+/* ===== 上拉加载（P2-⑭） ===== */
+.more {
+  padding: 26rpx 0;
+  text-align: center;
+  font-size: 25rpx;
+  color: #2B6CFF;
+}
+.more.busy { color: #94A3B8; }
+.more.end { color: #B4BFCE; }
+
+/* ===== 列表内联操作（冲销/撤回） ===== */
+.list-act {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 8rpx 24rpx;
+  font-size: 22rpx;
+  color: #5A6B85;
+  background: #F1F5F9;
+  border-radius: 999rpx;
+}
+
+/* 连续扫码批量登记（P2-⑬） */
+.bt-rows { max-height: 46vh; overflow-y: auto; margin-top: 12rpx; }
+.bt-row {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #F0F2F6;
+}
+.bt-row:last-child { border-bottom: none; }
+.qty-sm .qty-btn { width: 60rpx; height: 60rpx; border-radius: 16rpx; }
+.qty-sm .qty-inp { height: 60rpx; margin: 0 10rpx; width: 110rpx; flex: none; font-size: 28rpx; }
+.bt-del {
+  flex-shrink: 0;
+  margin-left: 14rpx;
+  width: 52rpx; height: 52rpx;
+  line-height: 52rpx;
+  text-align: center;
+  color: #94A3B8;
+  background: #F1F5F9;
+  border-radius: 50%;
+}

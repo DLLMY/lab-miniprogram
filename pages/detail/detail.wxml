@@ -91,27 +91,109 @@
     </view>
   </view>
 
+  <!-- ===== 二维码（P3-㉘）=====
+       此前只支持"识别码"，系统自己不会生成码：实物标签得用外部工具做，
+       新增物品后要另开一个网站把 ID 转成码再打印。这里直接在详情页出码并保存到相册。
+       内容统一为 ITEM:<ID>，扫码端按该前缀解析（与《全生命周期设计方案》一致）。 -->
+  <view wx:if="{{showQr}}" class="ap-mask" bindtap="closeQr">
+    <view class="ap-panel" catchtap="noop">
+      <view class="ap-head">
+        <view class="ap-title">物品二维码</view>
+        <view class="ap-close" bindtap="closeQr"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
+      </view>
+      <view class="ap-sub">{{item.name}} · {{item.id}}</view>
+
+      <view class="qr-box">
+        <canvas canvas-id="itemQr" class="qr-canvas"></canvas>
+      </view>
+      <view class="qr-tip">打印贴于货架或物品上；用本系统首页「扫描物品二维码」即可直达该物品。</view>
+
+      <view class="btn-row">
+        <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeQr">关闭</button></view>
+        <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="saveQr">保存到相册</button></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 申请弹层（数量 + 用途）=====
+       此前只有一个系统输入框填数量，用途说明列恒写空字符串：
+       出库没有用途记录，事后无法回答"这批料用到哪去了"。
+       现改为统一弹层：耗材填数量+用途，工具只填用途。 -->
+  <view wx:if="{{showApply}}" class="ap-mask" bindtap="closeApply">
+    <view class="ap-panel" catchtap="noop">
+      <view class="ap-head">
+        <view class="ap-title">{{applyMode === 'tool' ? '申请借出' : '申请领用'}}</view>
+        <view class="ap-close" bindtap="closeApply">
+          <image src="/images/ic-close-s.png" mode="aspectFit"></image>
+        </view>
+      </view>
+      <view class="ap-sub">{{item.name}}<block wx:if="{{applyMode !== 'tool'}}"> · 当前可用 {{item.stock}} {{item.unit}}</block></view>
+
+      <block wx:if="{{applyMode !== 'tool'}}">
+        <view class="field">
+          <view class="field-l">领用数量 <text class="ap-star">*</text></view>
+          <view class="qty">
+            <view class="qty-btn" bindtap="apStep" data-d="-1"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+            <input class="qty-inp" type="number" value="{{apQty}}" bindinput="apQtyInput" />
+            <view class="qty-btn" bindtap="apStep" data-d="1"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+          </view>
+        </view>
+      </block>
+
+      <view class="field">
+        <view class="field-l">用途说明</view>
+        <view class="ap-tags">
+          <view wx:for="{{usagePresets}}" wx:key="*this"
+                class="ap-tag {{apReason === item ? 'on' : ''}}"
+                data-v="{{item}}" bindtap="pickReason">{{item}}</view>
+        </view>
+        <input class="inp" placeholder="或填写具体用途" placeholder-class="inp-ph" value="{{apReason}}" bindinput="apReasonInput" />
+      </view>
+
+      <view class="btn-row">
+        <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeApply">取消</button></view>
+        <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitApply">提交申请</button></view>
+      </view>
+    </view>
+  </view>
+
   <!-- ===== 吸底操作条 ===== -->
   <view wx:if="{{item}}" class="dt-bar">
     <block wx:if="{{type==='material' && role==='student'}}">
-      <button class="btn btn-primary btn-block" bindtap="requisition">申请领用</button>
+      <button class="btn btn-primary btn-block" bindtap="openApply" data-mode="material">申请领用</button>
+    </block>
+    <!-- 教职工：出入库 + 二维码 -->
+    <block wx:elif="{{type==='material' && role!=='student'}}">
+      <view class="btn-row">
+        <view class="btn-cell">
+          <button class="btn btn-ghost btn-block" bindtap="openQr">二维码</button>
+        </view>
+        <view class="btn-cell">
+          <button class="btn btn-primary btn-block" bindtap="goIo" data-dir="in">扫码入库</button>
+        </view>
+        <view class="btn-cell">
+          <button class="btn btn-ghost btn-block" bindtap="goIo" data-dir="out">扫码出库</button>
+        </view>
+      </view>
     </block>
     <block wx:elif="{{type==='tool' && role==='student' && item.status==='在库'}}">
-      <button class="btn btn-primary btn-block" bindtap="requestBorrow">申请借出</button>
+      <button class="btn btn-primary btn-block" bindtap="openApply" data-mode="tool">申请借出</button>
     </block>
-    <block wx:elif="{{type==='tool' && role!=='student' && item.status!=='在库'}}">
-      <button class="btn btn-cyan btn-block" bindtap="returnTool">确认归还</button>
+    <!-- 归还：教师/管理员可代确认；借用本人也可自助归还（P1-⑤）。
+         此前学生扫到自己借的工具只能干等着，教师成为唯一的归还入口，成为流转瓶颈。 -->
+    <block wx:elif="{{type==='tool' && item.status==='借出' && (role!=='student' || isMineBorrow)}}">
+      <button class="btn btn-cyan btn-block" bindtap="returnTool">{{isMineBorrow ? '归还我的工具' : '确认归还'}}</button>
     </block>
-    <block wx:elif="{{type==='tool' && role==='student' && item.status!=='在库'}}">
+    <block wx:elif="{{type==='tool' && item.status!=='在库'}}">
       <view class="dt-hint">
         <image src="/images/ic-clock-s.png" mode="aspectFit"></image>
-        <text>该工具已借出，等待归还</text>
+        <text>{{isMineBorrow ? '你借用中，请在用完时归还' : '该工具已借出，等待归还'}}</text>
       </view>
     </block>
     <block wx:else>
       <view class="dt-hint">
         <image src="/images/ic-shield-s.png" mode="aspectFit"></image>
-        <text>{{role === 'student' ? '仅查看，无操作权限' : '当前物品在库，无需操作'}}</text>
+        <text>{{role === 'student' ? '仅查看，无操作权限' : (type === 'tool' ? ('当前状态：' + item.status + '，无需归还') : '当前物品在库，无需操作')}}</text>
       </view>
     </block>
   </view>

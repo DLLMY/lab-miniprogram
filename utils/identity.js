@@ -4,12 +4,13 @@
 //   未配云或云端不可用 → 回落本地 mock users 表。其余（持久化/globalData 同步）不变，各页面零改动。
 // 注意：mock.js/api.js 在 require 时会读 storage，故此处用惰性 require，避免 app.js 加载期调用 wx API。
 
-const ROLES = ['student', 'teacher', 'admin']
+const ROLES = ['student', 'teacher', 'admin', 'super']
 
-// 角色归一化：历史数据/手输可能给出 'Teacher'、'teacher '、'教师' 等，统一到三值，
+// 角色归一化：历史数据/手输可能给出 'Teacher'、'teacher '、'教师' 等，统一到四值，
 // 避免「明明选的是教师账号，页面却判定成学生」。
 function normalizeRole(r) {
   const s = ('' + (r === undefined || r === null ? '' : r)).trim().toLowerCase()
+  if (s === 'super' || s === '超级管理员') return 'super'
   if (s === 'teacher' || s === '教师' || s === '老师') return 'teacher'
   if (s === 'admin' || s === '管理员') return 'admin'
   return 'student'
@@ -80,7 +81,9 @@ function logout() {
 function switchAccount() {
   logout()
   wx.showToast({ title: '已退出，请重新登录', icon: 'none' })
-  setTimeout(() => wx.reLaunch({ url: '/pages/login/login' }), 300)
+  // 带 force=1 跳转：告知登录页「这是用户主动退出」，bootstrap 据此跳过 whoami 静默自动登录，
+  // 直接展示表单——否则真实云端下 whoami(openid) 会立刻以同一微信重新登录，表现为「退不出去」。
+  setTimeout(() => wx.reLaunch({ url: '/pages/login/login?force=1' }), 300)
 }
 
 // 把 storage 中的身份同步进 app.globalData（页面只读 globalData，不直接碰 storage）
@@ -109,16 +112,24 @@ function isStaff() {
   return normalizeRole(i.role) !== 'student'
 }
 
-// 是否管理员：仅 role === 'admin' 为真（用户与角色管理等后台功能据此对前端隐藏入口）
+// 是否管理员：role === 'admin' 或 'super' 为真（用户与角色管理等后台功能据此对前端隐藏入口）
 function isAdmin() {
   const i = current()
   if (!i) return false
-  return normalizeRole(i.role) === 'admin'
+  const r = normalizeRole(i.role)
+  return r === 'admin' || r === 'super'
+}
+
+// 是否超级管理员：仅 role === 'super' 为真（授予/管理 超级管理员、管理其它管理员等最高权限）
+function isSuper() {
+  const i = current()
+  if (!i) return false
+  return normalizeRole(i.role) === 'super'
 }
 
 function roleText(role) {
   const r = normalizeRole(role)
-  return r === 'teacher' ? '教师' : r === 'admin' ? '管理员' : '学生'
+  return r === 'teacher' ? '教师' : r === 'admin' ? '管理员' : r === 'super' ? '超级管理员' : '学生'
 }
 
-module.exports = { current, lookup, login, loginWithUser, logout, switchAccount, syncGlobal, isStaff, isAdmin, roleText, normalizeRole }
+module.exports = { current, lookup, login, loginWithUser, logout, switchAccount, syncGlobal, isStaff, isAdmin, isSuper, roleText, normalizeRole }

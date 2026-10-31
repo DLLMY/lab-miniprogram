@@ -3,7 +3,8 @@
     <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
     <view class="guard-t">权限受限</view>
     <view class="guard-s">出入库登记由教师 / 管理员操作<br />当前身份：{{roleText}}</view>
-    <button class="btn btn-primary btn-block" bindtap="switchAccount">切换为教师 / 管理员账号</button>
+    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点下方按钮退出并重新登录即可生效。</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
   </view>
 
   <block wx:else>
@@ -27,7 +28,7 @@
           <view class="field-l">选择耗材</view>
           <picker mode="selector" range="{{mats}}" range-key="name" value="{{idx}}" bindchange="onMat">
             <view class="picker-inp">
-              <text class="{{mats.length ? '' : 'muted'}}">{{mats.length ? (mats[idx].name + '（' + mats[idx].id + '）') : '耗材加载中…'}}</text>
+              <text class="{{mats.length ? '' : 'muted'}}">{{mats[idx] ? (mats[idx].name + '（' + mats[idx].id + '）') : (mats.length ? '请重新选择耗材' : '耗材加载中…')}}</text>
               <image class="picker-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
             </view>
           </picker>
@@ -46,6 +47,17 @@
           </view>
         </view>
 
+        <!-- 入库来源（P3-㉖）：区分采购/捐赠/调拨等，日后能答得出这批料是怎么来的 -->
+        <view wx:if="{{type==='in'}}" class="field">
+          <view class="field-l">来源类型</view>
+          <picker mode="selector" range="{{srcOptions}}" value="{{srcIdx}}" bindchange="onSrc">
+            <view class="picker-inp">
+              <text>{{srcOptions[srcIdx]}}</text>
+              <image class="picker-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
+            </view>
+          </picker>
+        </view>
+
         <view wx:if="{{curMat}}" class="io-preview">
           <view class="kv"><text class="kv-k">当前库存</text><text class="kv-v">{{curMat.stock}} {{curMat.unit}}</text></view>
           <view class="kv"><text class="kv-k">安全库存</text><text class="kv-v">{{curMat.safe}} {{curMat.unit}}</text></view>
@@ -53,6 +65,18 @@
         </view>
 
         <button class="btn btn-primary btn-block mt-m" bindtap="submit">确认{{type==='in'?'入库':'出库'}}登记</button>
+      </view>
+
+      <!-- 连续扫码批量登记（P2-⑬）：整批到货不必一件件选 -->
+      <view class="io-new card card-accent">
+        <view class="row">
+          <view class="list-ic"><image src="/images/ic-scan-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">连续扫码批量登记</view>
+            <view class="list-sub">扫多件后一次性提交，同物品自动累加</view>
+          </view>
+        </view>
+        <button class="btn btn-ghost btn-block btn-sm mt-m" bindtap="startBatch">＋ 开始扫码入库</button>
       </view>
 
       <!-- 新建物品入库：库里没有的东西，直接建档入库 -->
@@ -72,21 +96,55 @@
       <view class="sec mt-l">
         <view class="sec-bar"></view>
         <view class="sec-t">出入库流水</view>
-        <view class="sec-x">最近 {{logs.length}} 条</view>
+        <view class="sec-x">{{ioHasMore ? ('第 ' + logs.length + ' / ' + ioTotal + ' 条') : ('共 ' + ioTotal + ' 条')}}</view>
       </view>
+
+      <!-- 筛选条（P2-⑮）：对账时按物品/方向/操作人/时间筛，此前只能翻最近 30 条 -->
+      <view class="card card-tight">
+        <view class="flt">
+          <input class="flt-i" placeholder="物品ID" placeholder-class="inp-ph" value="{{fItem}}" data-k="fItem" bindinput="onFilter" />
+          <picker mode="selector" range="{{dirOptions}}" value="{{fDirIdx}}" bindchange="onDirFilter">
+            <view class="flt-p">{{fDir || '全部方向'}}</view>
+          </picker>
+          <input class="flt-i" placeholder="操作人" placeholder-class="inp-ph" value="{{fOp}}" data-k="fOp" bindinput="onFilter" />
+        </view>
+        <view class="flt mt-s">
+          <picker mode="date" value="{{fFrom}}" bindchange="onFrom">
+            <view class="flt-p">{{fFrom || '起始日期'}}</view>
+          </picker>
+          <picker mode="date" value="{{fTo}}" bindchange="onTo">
+            <view class="flt-p">{{fTo || '结束日期'}}</view>
+          </picker>
+          <view class="flt-btn" bindtap="resetFilter">重置</view>
+        </view>
+        <view wx:if="{{fActive}}" class="flt-sum">
+          筛选结果：入库 {{ioInQty}} · 出库 {{ioOutQty}}
+        </view>
+      </view>
+
       <view class="card">
         <view wx:if="{{!logs.length}}" class="empty">
           <image class="empty-ic" src="/images/ic-log-s.png" mode="aspectFit"></image>
-          <view>暂无出入库记录</view>
+          <view>{{fActive ? '没有符合条件的流水' : '暂无出入库记录'}}</view>
         </view>
-        <view wx:for="{{logs}}" wx:key="id" class="list-item">
+        <view wx:for="{{logs}}" wx:key="key" class="list-item">
           <view class="list-ic"><image src="{{item.icon}}" mode="aspectFit"></image></view>
           <view class="grow">
-            <view class="list-nm">{{item.itemName}}</view>
-            <view class="list-sub">{{item.item}} · {{item.op}} · {{item.time}}</view>
+            <view class="list-nm">{{item.itemName}}<block wx:if="{{item.reversed}}"> <text class="pill grey">已冲销</text></block></view>
+            <view class="list-sub">{{item.item}} · {{item.op}} · {{item.time}}<block wx:if="{{item.src}}"> · {{item.src}}</block></view>
+            <view wx:if="{{item.note}}" class="list-sub">{{item.note}}</view>
+            <!-- 冲销入口（P2-㉒，仅管理员）：错了用反向流水更正，不删记录 -->
+            <view wx:if="{{isAdmin && !item.reversed}}" class="list-act" data-no="{{item.id}}" catchtap="reverseIO">冲销</view>
           </view>
           <view class="io-amt {{item.isIn ? 'in' : 'out'}}">{{item.isIn ? '+' : '-'}}{{item.qty}}</view>
         </view>
+        <!-- 上拉加载（P2-⑭） -->
+        <view wx:if="{{ioHasMore}}" class="more {{ioLoading ? 'busy' : ''}}" bindtap="loadMoreLogs">{{ioLoading ? '加载中…' : '加载更多'}}</view>
+        <view wx:elif="{{logs.length}}" class="more end">已显示全部 {{ioTotal}} 条</view>
+      </view>
+
+      <view class="btn-row mt-m">
+        <view class="btn-cell"><button class="btn btn-ghost btn-block btn-sm" bindtap="exportIO">导出流水 CSV</button></view>
       </view>
 
       <view class="tip">登记将实时写入数据源；出库数量超过当前库存时会被拒绝。</view>
@@ -105,12 +163,12 @@
 
         <view class="field">
           <view class="field-l">物品名称 <text class="req">*</text></view>
-          <input class="inp" placeholder="如 光耦 4N35" placeholder-class="inp-ph" data-k="Name" value="{{nmName}}" bindinput="nmInput" />
+          <input class="inp" placeholder="请输入物品名称" placeholder-class="inp-ph" data-k="Name" value="{{nmName}}" bindinput="nmInput" />
         </view>
         <view class="nm-row">
           <view class="field nm-col">
             <view class="field-l">规格</view>
-            <input class="inp" placeholder="如 DIP-4" placeholder-class="inp-ph" data-k="Spec" value="{{nmSpec}}" bindinput="nmInput" />
+            <input class="inp" placeholder="请输入规格" placeholder-class="inp-ph" data-k="Spec" value="{{nmSpec}}" bindinput="nmInput" />
           </view>
           <view class="field nm-col">
             <view class="field-l">单位</view>
@@ -124,7 +182,7 @@
           </view>
           <view class="field nm-col">
             <view class="field-l">存放位置</view>
-            <input class="inp" placeholder="如 A柜-3" placeholder-class="inp-ph" data-k="Loc" value="{{nmLoc}}" bindinput="nmInput" />
+            <input class="inp" placeholder="请输入存放位置" placeholder-class="inp-ph" data-k="Loc" value="{{nmLoc}}" bindinput="nmInput" />
           </view>
         </view>
         <view class="nm-row">
@@ -145,6 +203,38 @@
         <view class="btn-row mt-m">
           <view class="btn-cell"><view class="btn btn-ghost" bindtap="closeNew">取消</view></view>
           <view class="btn-cell"><view class="btn btn-primary" bindtap="submitNew">确认入库</view></view>
+        </view>
+      </view>
+    </view>
+    <!-- ===== 连续扫码批量登记弹层（P2-⑬） ===== -->
+    <view wx:if="{{showBatch}}" class="nm-mask" bindtap="closeBatch">
+      <view class="nm-panel" catchtap="noop">
+        <view class="nm-head">
+          <view class="nm-title">连续扫码批量登记</view>
+          <view class="nm-close" bindtap="closeBatch"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="nm-sub">逐个扫码加入清单，可现场改数量；提交后每项各记一笔流水。</view>
+
+        <view class="bt-rows">
+          <view wx:if="{{!batch.length}}" class="empty">还没有扫码记录</view>
+          <view wx:for="{{batch}}" wx:key="key" class="bt-row">
+            <view class="grow">
+              <view class="list-nm">{{item.name}}</view>
+              <view class="list-sub">{{item.matId}}</view>
+            </view>
+            <view class="qty qty-sm">
+              <view class="qty-btn" data-i="{{index}}" data-d="-1" bindtap="btStep"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+              <input class="qty-inp" type="number" value="{{item.qty}}" data-i="{{index}}" bindinput="btQty" />
+              <view class="qty-btn" data-i="{{index}}" data-d="1" bindtap="btStep"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+            </view>
+            <view class="bt-del" data-i="{{index}}" bindtap="btDel">✕</view>
+          </view>
+        </view>
+
+        <button class="btn btn-ghost btn-block btn-sm mt-m" bindtap="scanOne">＋ 扫下一件</button>
+        <view class="btn-row mt-m">
+          <view class="btn-cell"><view class="btn btn-ghost" bindtap="closeBatch">取消</view></view>
+          <view class="btn-cell"><view class="btn btn-primary" bindtap="submitBatch">提交（{{batch.length}} 项）</view></view>
         </view>
       </view>
     </view>

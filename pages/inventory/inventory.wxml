@@ -30,10 +30,36 @@
       <view class="seg-i {{tab==='tool'?'on':''}}" bindtap="setTab" data-t="tool">工具</view>
     </view>
 
-    <!-- 搜索 -->
-    <view class="search">
-      <image src="/images/ic-search-s.png" mode="aspectFit"></image>
-      <input placeholder="搜索名称或 ID" placeholder-class="search-ph" value="{{kw}}" bindinput="onKw" />
+    <!-- 搜索（P2-⑰：与首页同一套模糊能力，跨耗材+工具，支持部分匹配与容错） -->
+    <view class="search-wrap">
+      <view class="search">
+        <image src="/images/ic-search-s.png" mode="aspectFit"></image>
+        <input placeholder="搜索名称 / ID / 规格 / 位置" placeholder-class="search-ph" value="{{kw}}" bindinput="onKw" bindblur="onSearchBlur" bindconfirm="pickSuggestFirst" />
+      </view>
+      <!-- 实时下拉建议：全库模糊匹配，点选直达详情（不受当前分段限制） -->
+      <view wx:if="{{showSuggest && suggest.length}}" class="suggest">
+        <view wx:for="{{suggest}}" wx:key="key" class="suggest-item" data-id="{{item.id}}" bindtap="pickSuggest">
+          <view class="suggest-ic {{item.type === 'tool' ? 'tool' : 'mat'}}">
+            <image src="{{item.type === 'tool' ? '/images/ic-tool-s.png' : '/images/ic-box-s.png'}}" mode="aspectFit"></image>
+          </view>
+          <view class="grow">
+            <view class="suggest-nm">{{item.name}}</view>
+            <view class="suggest-sub">{{item.id}} · {{item.sub}}</view>
+          </view>
+          <view class="suggest-tag">{{item.type === 'tool' ? '工具' : '耗材'}}</view>
+        </view>
+      </view>
+      <view wx:if="{{showSuggest && suggest.length}}" class="suggest-mask" bindtap="closeSuggest"></view>
+    </view>
+
+    <!-- 教职工工具区（P1 盘点/期初 + P1 导出） -->
+    <view wx:if="{{isStaff}}" class="btn-row" style="margin-top:24rpx">
+      <view class="btn-cell">
+        <button class="btn btn-ghost btn-block" bindtap="goStocktake">库存盘点</button>
+      </view>
+      <view class="btn-cell">
+        <button class="btn btn-ghost btn-block" bindtap="exportList">{{tab==='tool' ? '导出工具台账' : '导出库存清单'}}</button>
+      </view>
     </view>
 
     <view class="card mt-m">
@@ -48,7 +74,16 @@
           <view class="grow">
             <view class="list-nm">{{item.name}}</view>
             <view class="list-sub">{{item.id}} · {{item.cat}} · {{item.loc}}</view>
+            <!-- 效期提示（P3-㉕）：过期/临期一眼可见，不用翻档案 -->
+            <view wx:if="{{item.expired || item.expiring}}" class="list-sub {{item.expired ? 'list-warn' : 'list-soon'}}">
+              {{item.expired ? '已过期' : '临近有效期'}}：{{item.expire}}
+            </view>
             <view class="bar"><view class="bar-in {{item.low ? 'red' : ''}}" style="width:{{item.pct}}%"></view></view>
+            <!-- 快捷登记（P2-⑯）：库存页就地发起出入库，不必回主页找登记入口再重选一遍 -->
+            <view wx:if="{{isStaff}}" class="iv-acts">
+              <view class="iv-act in" data-id="{{item.id}}" data-dir="in" catchtap="quickIo">入库</view>
+              <view class="iv-act out" data-id="{{item.id}}" data-dir="out" catchtap="quickIo">出库</view>
+            </view>
           </view>
           <view class="iv-qty {{item.low ? 'low' : ''}}">
             <view class="iv-qn">{{item.stock}}</view>

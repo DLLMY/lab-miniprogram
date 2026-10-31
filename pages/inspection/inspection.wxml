@@ -1,0 +1,85 @@
+<view class="page" wx:if="{{!denied}}">
+
+  <view class="sec">
+    <view class="sec-bar"></view>
+    <view class="sec-t">巡检管理</view>
+    <view class="sec-x">{{list.length}} 条</view>
+  </view>
+
+  <!-- 筛选 + 新增 -->
+  <view class="row" style="gap:16rpx;margin-bottom:24rpx;flex-wrap:wrap;">
+    <picker mode="selector" range="{{labLabels}}" value="{{labIndex}}" bindchange="onFilterLab" class="grow">
+      <view class="picker-inp">{{labLabels[labIndex] || '全部实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+    </picker>
+    <picker mode="selector" range="{{statusLabels}}" value="{{filterStatusIndex}}" bindchange="onFilterStatus" class="grow">
+      <view class="picker-inp">{{filterStatus}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+    </picker>
+    <button class="btn btn-primary btn-sm" style="flex-shrink:0" bindtap="openAdd">+ 巡检</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{list.length===0}}" class="empty">
+    <view>暂无巡检任务</view>
+  </view>
+
+  <view wx:for="{{list}}" wx:key="id" class="card card-tight">
+    <view class="row-between">
+      <text class="list-nm">{{item.title}}</text>
+      <text class="pill {{item.overdue && item.status==='待巡检' ? 'red' : item.status==='待巡检'?'blue':item.status==='已完成'?'ok':'red'}}">{{item.overdue && item.status==='待巡检' ? '已逾期' : item.status}}</text>
+    </view>
+    <view class="list-sub mt-s">归属：{{item.labName}}{{item.labDeleted ? '（实训室已删除）' : '（'+item.labId+'）'}}</view>
+    <view class="list-sub">计划日期：{{item.planDate || '—'}} · 执行人：{{item.executorName||'—'}}</view>
+    <view wx:if="{{item.status==='已完成'}}" class="list-sub">巡检结果：{{item.result||'—'}} · 完成于 {{item.doneAt||'—'}}</view>
+    <button wx:if="{{item.status!=='已完成'}}" class="btn btn-ghost btn-sm mt-m" data-item="{{item}}" bindtap="openExec">执行 / 记录结果</button>
+  </view>
+
+</view>
+
+<!-- 新增巡检任务 -->
+<view wx:if="{{showForm}}" class="mask" bindtap="closeForm">
+  <view class="sheet" catchtap="noop">
+    <view class="title">新增巡检任务</view>
+    <view class="field">
+      <view class="field-l">归属实训室 <text class="muted">(必选)</text></view>
+      <picker mode="selector" range="{{labLabels}}" value="{{labIndex}}" bindchange="onLab">
+        <view class="picker-inp">{{labLabels[labIndex] || '请选择实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="field-l">巡检任务 <text class="muted">(必填)</text></view>
+      <input class="inp" value="{{form.title}}" placeholder="请输入巡检任务" bindinput="onTitle" />
+    </view>
+    <view class="field">
+      <view class="field-l">计划日期</view>
+      <picker mode="date" value="{{form.planDate}}" bindchange="onPlanDate">
+        <view class="picker-inp">{{form.planDate || '选择日期'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      </picker>
+    </view>
+    <view class="btn-row mt-m">
+      <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeForm">取消</button></view>
+      <view class="btn-cell"><button class="btn btn-primary" bindtap="save">下发</button></view>
+    </view>
+  </view>
+</view>
+
+<!-- 执行 / 记录结果 -->
+<view wx:if="{{showExec}}" class="mask" bindtap="closeExec">
+  <view class="sheet" catchtap="noop">
+    <view class="title">执行：{{executing.title}}</view>
+    <view class="list-sub">归属：{{executing.labName}}（{{executing.labId}}）· 计划 {{executing.planDate||'—'}}</view>
+    <view class="field mt-m">
+      <view class="field-l">巡检结果 / 记录</view>
+      <input class="inp" value="{{resultText}}" placeholder="请输入巡检结果" bindinput="onResult" />
+    </view>
+    <view class="btn-row mt-m">
+      <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeExec">取消</button></view>
+      <view class="btn-cell"><button class="btn btn-primary" bindtap="saveExec">标记已完成</button></view>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{denied}}" class="guard">
+  <image class="guard-ic" src="/images/ic-shield-w.png" mode="aspectFit"></image>
+  <view class="guard-t">仅教师 / 管理员可访问</view>
+  <view class="guard-s">巡检管理由教师分配与执行，请用教师或管理员账号登录。</view>
+</view>

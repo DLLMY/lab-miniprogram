@@ -4,7 +4,8 @@
     <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
     <view class="guard-t">权限受限</view>
     <view class="guard-s">教师 / 管理员可在此审批领用申请<br />当前身份：{{me ? (me.id + '（' + me.name + '）· ' + roleText) : '未登录'}}</view>
-    <button class="btn btn-primary btn-block" bindtap="switchAccount">切换为教师 / 管理员账号</button>
+    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点下方按钮退出并重新登录即可生效。</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
   </view>
 
   <block wx:else>
@@ -25,14 +26,26 @@
       <view wx:if="{{list.length===0}}" class="card">
         <view class="empty">
           <image class="empty-ic" src="/images/ic-check-s.png" mode="aspectFit"></image>
-          <view>全部处理完毕</view>
-          <view class="tip">当前没有待审批的领用申请</view>
+          <view>{{loadErr ? '加载失败' : '全部处理完毕'}}</view>
+          <view class="tip">{{loadErr ? '待审批列表获取失败，请下拉刷新重试' : '当前没有待审批的领用申请'}}</view>
+        </view>
+      </view>
+
+      <!-- 批量操作条（P2-⑬）：多张同批次的申请不必一张张点 -->
+      <view wx:if="{{list.length}}" class="card card-tight mt-m">
+        <view class="row-between">
+          <view class="row tap" bindtap="toggleAll">
+            <view class="ck {{allChecked ? 'on' : ''}}"></view>
+            <view class="list-sub">全选（{{checked.length}}/{{list.length}}）</view>
+          </view>
+          <view class="btn-sm primary {{checked.length ? '' : 'off'}}" bindtap="approveAll">批量通过</view>
         </view>
       </view>
 
       <view wx:for="{{list}}" wx:key="no" class="card">
         <view class="row-between">
           <view class="row">
+            <view class="ck {{checked.indexOf(item.no) >= 0 ? 'on' : ''}}" data-no="{{item.no}}" catchtap="toggleOne"></view>
             <view class="list-ic"><image src="/images/ic-inbox-b.png" mode="aspectFit"></image></view>
             <view class="grow">
               <view class="list-nm">{{item.kind === 'tool' ? (item.toolId + '（工具借出）') : (item.matId + ' ×' + item.qty)}}</view>
@@ -44,14 +57,41 @@
 
         <view class="kv mt-s"><text class="kv-k">申请单号</text><text class="kv-v">{{item.no}}</text></view>
         <view class="kv"><text class="kv-k">申请时间</text><text class="kv-v">{{item.time}}</text></view>
+        <!-- 用途说明：审批时要知道"为什么领"，才谈得上批还是不批（P1-⑦） -->
+        <view wx:if="{{item.reason}}" class="kv">
+          <text class="kv-k">用途说明</text><text class="kv-v">{{item.reason}}</text>
+        </view>
 
         <view class="btn-row mt-m">
           <view class="btn-cell row">
             <view class="btn-s pass" data-no="{{item.no}}" data-ok="1" bindtap="approve">通过</view>
           </view>
           <view class="btn-cell row">
-            <view class="btn-s reject" data-no="{{item.no}}" data-ok="0" bindtap="approve">拒绝</view>
+            <view class="btn-s reject" data-no="{{item.no}}" data-ok="0" bindtap="openReject">拒绝</view>
           </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 驳回原因弹层（P1-⑧）：服务端强制，拒绝必须写明为什么 -->
+    <view wx:if="{{showReject}}" class="ap-mask" bindtap="closeReject">
+      <view class="ap-panel" catchtap="noop">
+        <view class="ap-head">
+          <view class="ap-title">驳回原因</view>
+          <view class="ap-close" bindtap="closeReject"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="ap-sub">单号 {{rejectNo}} · 原因将展示给申请人，便于其改正后重新提交</view>
+        <view class="ap-tags">
+          <view wx:for="{{rejectPresets}}" wx:key="*this"
+                class="ap-tag {{rejectWhy === item ? 'on' : ''}}"
+                data-v="{{item}}" bindtap="pickReject">{{item}}</view>
+        </view>
+        <view class="field">
+          <input class="inp" placeholder="或填写具体驳回原因" placeholder-class="inp-ph" value="{{rejectWhy}}" bindinput="rejectInput" />
+        </view>
+        <view class="btn-row">
+          <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeReject">取消</button></view>
+          <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitReject">确认驳回</button></view>
         </view>
       </view>
     </view>

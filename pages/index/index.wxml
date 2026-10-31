@@ -42,11 +42,42 @@
       </view>
     </view>
 
-    <!-- 快捷搜索 -->
-    <view class="search mt-m">
-      <image src="/images/ic-search-s.png" mode="aspectFit"></image>
-      <input placeholder="输入物品 ID 查询，如 M001 / T001" placeholder-class="search-ph" value="{{qid}}" bindinput="input" bindconfirm="go" confirm-type="search" />
-      <view class="search-go" bindtap="go">查询</view>
+    <!-- 快捷搜索（模糊匹配 + 实时下拉建议） -->
+    <view class="search-wrap mt-m">
+      <view class="search">
+        <image src="/images/ic-search-s.png" mode="aspectFit"></image>
+        <input placeholder="搜索名称 / 规格 / 编码" placeholder-class="search-ph" value="{{qid}}" bindinput="onSearch" bindfocus="onFocus" bindconfirm="go" confirm-type="search" />
+        <view wx:if="{{qid}}" class="search-clear" catchtap="clearSearch">✕</view>
+        <view wx:else class="search-go" bindtap="go">查询</view>
+      </view>
+      <!-- 候选下拉：锚定在搜索框下方；点击候选直达详情 -->
+      <view wx:if="{{showSuggest}}" class="suggest">
+        <view wx:if="{{suggest.length===0}}" class="suggest-empty">未找到匹配的物品</view>
+        <view wx:for="{{suggest}}" wx:key="id" class="suggest-item" catchtap="pickItem" data-id="{{item.id}}">
+          <view class="suggest-ic {{item.type==='tool'?'tool':'mat'}}">{{item.type==='tool'?'工':'耗'}}</view>
+          <view class="grow">
+            <view class="suggest-nm">{{item.name}}</view>
+            <view class="suggest-sub">{{item.id}} · {{item.sub}}</view>
+          </view>
+          <text class="suggest-tag">{{item.type==='tool'?(item.status||''):('库存 '+item.stock)}}</text>
+        </view>
+      </view>
+    </view>
+    <!-- 点击空白处收起下拉 -->
+    <view wx:if="{{showSuggest}}" class="suggest-mask" catchtap="closeSuggest"></view>
+
+    <!-- 库存预警（P2-⑳）：教师不看库存页也要知道缺什么了 -->
+    <view wx:if="{{isStaff && lowCount}}" class="card card-accent warn-card mt-m" bindtap="goInventory">
+      <view class="row-between">
+        <view class="row">
+          <view class="list-ic"><image src="/images/ic-alert-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="list-nm">{{lowCount}} 项耗材低于安全库存</view>
+            <view class="list-sub" wx:for="{{lowList}}" wx:key="id">{{item.name}} 剩 {{item.stock}}{{item.unit}}（下限 {{item.safe}}）</view>
+          </view>
+        </view>
+        <view class="pill red">需补货</view>
+      </view>
     </view>
 
     <!-- 功能入口 -->
@@ -101,6 +132,33 @@
           </view>
         </view>
       </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/labs/labs" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">实训室管理</view>
+            <view class="grid-s">位置 / 负责人 / 归属</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/repair/repair" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-tool-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">报修管理</view>
+            <view class="grid-s">归属实训室的报修</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/inspection/inspection" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-search-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">巡检管理</view>
+            <view class="grid-s">归属实训室的巡检</view>
+          </view>
+        </view>
+      </view>
       <view class="grid-i">
         <view class="grid-c" bindtap="switchAccount">
           <view class="grid-ic"><image src="/images/ic-users-b.png" mode="aspectFit"></image></view>
@@ -112,6 +170,18 @@
       </view>
     </view>
 
-    <view class="tip">演示模式：未配置云函数 / 腾讯文档时自动使用本地模拟数据，可完整体验查询、领用、借还、审批、出入库、概况全流程。</view>
+  </view>
+
+  <!-- ===== 新手引导（P3-㉙）=====
+       首次进入按角色给一次操作指引；关闭后写入本地标记，之后不再出现。 -->
+  <view wx:if="{{showGuide}}" class="ap-mask">
+    <view class="ap-panel" catchtap="noop">
+      <view class="ap-head">
+        <view class="ap-title">{{guideTitle}}</view>
+      </view>
+      <view class="ap-sub">按你当前的权限，常用操作如下：</view>
+      <view wx:for="{{guideSteps}}" wx:key="*this" class="gd-step">{{item}}</view>
+      <button class="btn btn-primary btn-block mt-m" bindtap="closeGuide">我知道了</button>
+    </view>
   </view>
 </view>

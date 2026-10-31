@@ -2,17 +2,28 @@ const identity = require('../../utils/identity.js')
 const api = require('../../utils/api.js')
 
 Page({
-  data: { name: '', id: '', busy: false },
-  onLoad() {
-    this.bootstrap()
+  data: { name: '', id: '', busy: false, autoJumping: false },
+  onLoad(options) {
+    this.bootstrap(options || {})
   },
-  async bootstrap() {
+  async bootstrap(options) {
     // 已有身份 → 直接放行（冷启动透传，无需重复登录）
     if (identity.current()) {
-      wx.switchTab({ url: '/pages/index/index' })
+      // ⚠️ 不能在 onLoad 内同步跳转：LazyCodeLoading 开启时，当前页 webview 尚未注册完
+      // 就切路由会触发 'routeDone with a webviewId X is not found' 及连带
+      // 'Cannot read properties of null (reading screenHeight)' 崩溃。
+      // 必须延迟到下一 tick 再切换，并用 autoJumping 占位避免表单闪现。
+      this.setData({ autoJumping: true })
+      setTimeout(() => wx.switchTab({ url: '/pages/index/index' }), 60)
       return
     }
-    // 已绑定过微信的用户：免输入姓名/工号，直接自动登录
+    // 用户主动「退出/切换账号」后跳转而来（?force=1）：不要再用 whoami 静默自动登录，
+    // 否则真实云端下会立刻以同一微信重新登录回原账号，表现为「点了退出却没退出」。
+    // 直接展示登录表单，让用户重新录入（也能拾取表格里刚改过的角色）。
+    if (options && options.force === '1') {
+      return
+    }
+    // 冷启动且已绑定过微信的用户：免输入姓名/工号，直接自动登录
     try {
       const u = await api.call('whoami', {})
       if (u) {
@@ -35,7 +46,9 @@ Page({
     this.setData({ busy: true })
     wx.showLoading({ title: '绑定中...', mask: true })
     try {
-      const r = await api.callFull('bindLogin', { name, id })
+      // noFallback：bindLogin 是写操作（把 openid 写进 users 表）。传输失败时若回落本地
+      // mock，mock 用户表为空会误报「工号不存在」，把网络问题伪装成业务错误。
+      const r = await api.callFull('bindLogin', { name, id }, { noFallback: true })
       if (r && r.code === 0 && r.data) {
         identity.loginWithUser(r.data)
         wx.showToast({ title: '绑定成功，欢迎 ' + r.data.name, icon: 'none' })

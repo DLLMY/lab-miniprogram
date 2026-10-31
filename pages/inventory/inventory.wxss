@@ -42,3 +42,46 @@
   margin-top: 4rpx;
 }
 .iv-qty.low .iv-qn { color: #DC2626; }
+
+/* 搜索下拉建议（与首页同规格，保持手感一致） */
+.search-wrap { position: relative; }
+.suggest-mask { position: fixed; inset: 0; z-index: 40; }
+.suggest {
+  position: absolute; top: calc(100% + 12rpx); left: 0; right: 0; z-index: 50;
+  background: #FFFFFF; border-radius: 22rpx; overflow: hidden;
+  box-shadow: 0 16rpx 48rpx rgba(20, 33, 61, .16);
+  max-height: 62vh; overflow-y: auto;
+}
+.suggest-item {
+  display: flex; align-items: center; padding: 22rpx 26rpx;
+  border-bottom: 1rpx solid #F0F2F6;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-ic {
+  width: 56rpx; height: 56rpx; border-radius: 16rpx; flex-shrink: 0; margin-right: 20rpx;
+  display: flex; align-items: center; justify-content: center;
+}
+.suggest-ic image { width: 30rpx; height: 30rpx; }
+.suggest-ic.mat { background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%); }
+.suggest-ic.tool { background: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%); }
+.suggest-nm { font-size: 28rpx; color: #1A2238; font-weight: 600; }
+.suggest-sub { font-size: 22rpx; color: #8A95A8; margin-top: 4rpx; }
+.suggest-tag {
+  flex-shrink: 0; margin-left: 16rpx; font-size: 22rpx; color: #6B7688;
+  padding: 4rpx 14rpx; border-radius: 12rpx; background: #F3F5F9;
+}
+
+/* 快捷出入库（P2-⑯） */
+.iv-acts { display: flex; gap: 12rpx; margin-top: 14rpx; }
+.iv-act {
+  padding: 6rpx 22rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  border-radius: 999rpx;
+}
+.iv-act.in { color: #0891B2; background: rgba(6, 182, 212, .12); }
+.iv-act.out { color: #DC2626; background: rgba(239, 68, 68, .10); }
+
+/* 效期提示（P3-㉕） */
+.list-warn { color: #DC2626; font-weight: 600; }
+.list-soon { color: #D97706; font-weight: 600; }

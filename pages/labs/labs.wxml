@@ -1,0 +1,196 @@
+<view class="page" wx:if="{{!denied}}">
+
+  <!-- ============ 列表模式 ============ -->
+  <block wx:if="{{mode==='list'}}">
+    <view class="sec">
+      <view class="sec-bar"></view>
+      <view class="sec-t">实训室</view>
+      <view class="sec-x">{{labs.length}} 间</view>
+    </view>
+
+    <view class="row-between mb-m" style="gap:20rpx;align-items:flex-start;">
+      <view class="muted grow" style="min-width:0;line-height:1.5;">核心归属实体 · 位置与负责人统一维护</view>
+      <button wx:if="{{isAdmin}}" class="btn btn-primary btn-sm" style="flex-shrink:0;" bindtap="openAdd">+ 新增实训室</button>
+    </view>
+
+    <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{labs.length===0}}" class="empty">
+      <view>{{isAdmin ? '暂无实训室，点右上角新增' : '暂无实训室'}}</view>
+    </view>
+
+    <view wx:for="{{labs}}" wx:key="id" class="list-item tap" data-id="{{item.id}}" bindtap="tapLab">
+      <view class="list-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+      <view class="grow">
+        <view class="row">
+          <text class="list-nm">{{item.name}}</text>
+          <text class="pill {{item.status==='停用'?'grey':'ok'}}">{{item.status||'启用'}}</text>
+        </view>
+        <view class="list-sub">{{item.campus||'—'}} · {{item.building||''}}{{item.floor?item.floor+'楼':''}}{{item.roomNo?(' '+item.roomNo+'室'):''}}</view>
+        <view class="list-sub">负责人：{{item.managerName || '未设置'}}<text wx:if="{{item.managerId}}">（{{item.managerId}}）</text></view>
+      </view>
+      <image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
+    </view>
+
+  </block>
+
+  <!-- ============ 详情模式（按实训室维度统一查询） ============ -->
+  <block wx:elif="{{mode==='detail'}}">
+    <view class="row-between mb-m" style="gap:20rpx;">
+      <view class="row grow" style="min-width:0;" bindtap="back">
+        <image class="list-arrow" style="transform:rotate(180deg)" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
+        <text class="sub">实训室列表</text>
+      </view>
+      <view wx:if="{{isAdmin}}" class="row" style="flex-shrink:0;">
+        <view class="u-op" bindtap="openEdit">编辑</view>
+        <view class="u-op danger" bindtap="del">删除</view>
+      </view>
+    </view>
+
+    <view wx:if="{{!current || !current.lab}}" class="empty">未找到该实训室</view>
+
+    <block wx:else>
+      <!-- 基本信息 + 位置 -->
+      <view class="card">
+        <view class="row-between mb-m">
+          <view class="row">
+            <text class="list-nm">{{current.lab.name}}</text>
+            <text class="pill {{current.lab.status==='停用'?'grey':'ok'}}">{{current.lab.status||'启用'}}</text>
+          </view>
+          <text class="muted">{{current.lab.id}}</text>
+        </view>
+        <view class="kv"><text class="kv-k">校区</text><text class="kv-v">{{current.lab.campus || '—'}}</text></view>
+        <view class="kv"><text class="kv-k">楼栋 / 楼层</text><text class="kv-v">{{current.lab.building || '—'}} {{current.lab.floor || ''}}</text></view>
+        <view class="kv"><text class="kv-k">房间号</text><text class="kv-v">{{current.lab.roomNo || '—'}}</text></view>
+        <view class="kv"><text class="kv-k">详细地址</text><text class="kv-v">{{current.lab.address || '—'}}</text></view>
+        <view class="kv"><text class="kv-k">经纬度</text><text class="kv-v">{{current.lab.lng||0}}, {{current.lab.lat||0}}</text></view>
+        <view wx:if="{{current.lab.note}}" class="kv"><text class="kv-k">备注</text><text class="kv-v">{{current.lab.note}}</text></view>
+      </view>
+
+      <!-- 负责人 -->
+      <view class="card card-accent">
+        <view class="row-between">
+          <view class="row">
+            <view class="list-ic"><image src="/images/ic-user-b.png" mode="aspectFit"></image></view>
+            <view class="grow">
+              <view class="list-nm">负责人</view>
+              <view class="list-sub">{{current.lab.managerName || '未设置'}}</view>
+            </view>
+          </view>
+          <text class="pill cyan">{{current.lab.managerId || '—'}}</text>
+        </view>
+      </view>
+
+      <!-- 报修记录（归属本实训室） -->
+      <view class="sec mt-l">
+        <view class="sec-bar"></view>
+        <view class="sec-t">报修记录</view>
+        <view class="sec-x">{{current.repairs.length}} 条</view>
+      </view>
+      <view wx:if="{{current.repairs.length===0}}" class="tip">本实训室暂无报修</view>
+      <view wx:for="{{current.repairs}}" wx:key="id" class="list-item">
+        <view class="list-ic"><image src="/images/ic-tool-b.png" mode="aspectFit"></image></view>
+        <view class="grow">
+          <view class="row">
+            <text class="list-nm">{{item.title}}</text>
+            <text class="pill {{item.status==='待处理'?'warn':item.status==='处理中'?'blue':item.status==='已完成'?'ok':'grey'}}">{{item.status}}</text>
+          </view>
+          <view class="list-sub">{{item.category}} · 报修人 {{item.reporterName||'—'}} · {{item.priority}}</view>
+        </view>
+      </view>
+      <button class="btn btn-ghost btn-block mt-m" bindtap="goRepairs">前往报修管理</button>
+
+      <!-- 巡检记录（归属本实训室） -->
+      <view class="sec mt-l">
+        <view class="sec-bar"></view>
+        <view class="sec-t">巡检记录</view>
+        <view class="sec-x">{{current.inspections.length}} 条</view>
+      </view>
+      <view wx:if="{{current.inspections.length===0}}" class="tip">本实训室暂无巡检</view>
+      <view wx:for="{{current.inspections}}" wx:key="id" class="list-item">
+        <view class="list-ic"><image src="/images/ic-search-b.png" mode="aspectFit"></image></view>
+        <view class="grow">
+          <view class="row">
+            <text class="list-nm">{{item.title}}</text>
+            <text class="pill {{item.overdue && item.status==='待巡检' ? 'red' : (item.status==='待巡检'?'blue':item.status==='已完成'?'ok':'red')}}">{{item.overdue && item.status==='待巡检' ? '已逾期' : item.status}}</text>
+          </view>
+          <view class="list-sub">计划 {{item.planDate||'—'}} · 执行人 {{item.executorName||'—'}}</view>
+        </view>
+      </view>
+      <button class="btn btn-ghost btn-block mt-m" bindtap="goInspections">前往巡检管理</button>
+    </block>
+  </block>
+
+  <!-- ============ 新增 / 编辑 实训室（位置维护 + 负责人管理） ============ -->
+  <view wx:if="{{showForm}}" class="mask" bindtap="closeForm">
+    <view class="sheet" catchtap="noop">
+      <view class="title">{{editing ? '编辑实训室' : '新增实训室'}}</view>
+
+      <view class="field">
+        <view class="field-l">名称 <text class="muted">(必填，作为实训室主键)</text></view>
+        <input class="inp" value="{{form.name}}" placeholder="请输入实训室名称" bindinput="onName" />
+      </view>
+      <view class="row" style="gap:16rpx">
+        <view class="field grow">
+          <view class="field-l">校区</view>
+          <input class="inp" value="{{form.campus}}" placeholder="主校区" bindinput="onCampus" />
+        </view>
+        <view class="field grow">
+          <view class="field-l">楼栋</view>
+          <input class="inp" value="{{form.building}}" placeholder="实训楼A" bindinput="onBuilding" />
+        </view>
+      </view>
+      <view class="row" style="gap:16rpx">
+        <view class="field grow">
+          <view class="field-l">楼层</view>
+          <input class="inp" value="{{form.floor}}" placeholder="3" bindinput="onFloor" />
+        </view>
+        <view class="field grow">
+          <view class="field-l">房间号</view>
+          <input class="inp" value="{{form.roomNo}}" placeholder="301" bindinput="onRoomNo" />
+        </view>
+      </view>
+      <view class="field">
+        <view class="field-l">详细地址</view>
+        <input class="inp" value="{{form.address}}" placeholder="实训楼A 3楼东" bindinput="onAddress" />
+      </view>
+      <view class="row" style="gap:16rpx">
+        <view class="field grow">
+          <view class="field-l">经度</view>
+          <input class="inp" value="{{form.lng}}" placeholder="0" bindinput="onLng" />
+        </view>
+        <view class="field grow">
+          <view class="field-l">纬度</view>
+          <input class="inp" value="{{form.lat}}" placeholder="0" bindinput="onLat" />
+        </view>
+      </view>
+      <view class="field">
+        <view class="field-l">负责人（教师 / 管理员）</view>
+        <picker mode="selector" range="{{managerLabels}}" value="{{managerIndex}}" bindchange="onManager">
+          <view class="picker-inp">{{managerLabels[managerIndex] || '请选择负责人'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-l">状态</view>
+        <picker mode="selector" range="{{statusLabels}}" value="{{statusIndex}}" bindchange="onStatus">
+          <view class="picker-inp">{{statusLabels[statusIndex]}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-l">备注</view>
+        <input class="inp" value="{{form.note}}" placeholder="选填" bindinput="onNote" />
+      </view>
+
+      <view class="btn-row mt-m">
+        <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeForm">取消</button></view>
+        <view class="btn-cell"><button class="btn btn-primary" bindtap="save">保存</button></view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 权限拦截 -->
+<view wx:if="{{denied}}" class="guard">
+  <image class="guard-ic" src="/images/ic-shield-w.png" mode="aspectFit"></image>
+  <view class="guard-t">仅教师 / 管理员可访问</view>
+  <view class="guard-s">实训室归属管理（位置、负责人、报修、巡检）为管理功能，请用教师或管理员账号登录。</view>
+</view>

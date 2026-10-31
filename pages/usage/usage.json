@@ -1,1 +1,1 @@
-{ "navigationBarTitleText": "使用概况", "usingComponents": {} }
+{ "navigationBarTitleText": "使用概况", "enablePullDownRefresh": true, "usingComponents": {} }

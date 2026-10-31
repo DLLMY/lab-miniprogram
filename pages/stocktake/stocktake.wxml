@@ -1,0 +1,72 @@
+<view class="wk">
+  <!-- 权限拦截 -->
+  <block wx:if="{{!allow}}">
+    <view class="page">
+      <view class="card">
+        <view class="guard-t">{{modeName}}需要教师 / 管理员权限</view>
+        <view class="guard-s">当前身份：{{roleText}}</view>
+        <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+        <view class="tip">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点上方按钮退出并重新登录即可生效。</view>
+      </view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="hero dt-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-tag">{{mode === 'opening' ? '启用前的大盘点' : '账实核对'}}</view>
+        <view class="dt-name">{{modeName}}</view>
+        <view class="dt-id">共 {{list.length}} 项耗材 · 已录入 {{filled}} 项</view>
+      </view>
+    </view>
+
+    <view class="page">
+      <view class="card">
+        <view class="tip" style="margin-top:0">
+          {{mode === 'opening'
+            ? '录入系统启用时的实际库存，作为此后一切账目的起点。每项会记一笔「期初入库」流水。'
+            : '清点实物后录入实盘数量，系统按「实盘 - 账面」的差额自动调整库存并记调整流水，可追溯。'}}
+        </view>
+      </view>
+
+      <view wx:for="{{list}}" wx:key="id" class="card st-item">
+        <view class="row-between">
+          <view class="grow">
+            <view class="st-name">{{item.name}}</view>
+            <view class="st-sub">{{item.id}} · {{item.spec || '无规格'}} · {{item.loc || '未设位置'}}</view>
+          </view>
+          <view class="st-book">
+            <view class="st-book-n">{{item.book}}</view>
+            <view class="st-book-l">账面</view>
+          </view>
+        </view>
+
+        <view class="st-input">
+          <view class="st-lbl">{{mode === 'opening' ? '期初数量' : '实盘数量'}}</view>
+          <view class="qty">
+            <view class="qty-btn" data-i="{{index}}" data-d="-1" bindtap="step"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+            <input class="qty-inp" type="number" value="{{item.real}}" data-i="{{index}}" bindinput="onReal" placeholder="0" placeholder-class="inp-ph" />
+            <view class="qty-btn" data-i="{{index}}" data-d="1" bindtap="step"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+          </view>
+          <view wx:if="{{mode !== 'opening'}}" class="st-same" data-i="{{index}}" bindtap="same">同账面</view>
+        </view>
+
+        <view wx:if="{{item.diff !== 0}}" class="st-diff {{item.diff > 0 ? 'up' : 'down'}}">
+          差异 {{item.diff > 0 ? '+' : ''}}{{item.diff}} {{item.unit}}　→ 将{{item.diff > 0 ? '入库' : '出库'}} {{item.diff > 0 ? item.diff : (0 - item.diff)}}
+        </view>
+      </view>
+
+      <view wx:if="{{!list.length}}" class="empty">
+        <image class="empty-ic" src="/images/ic-search-s.png" mode="aspectFit"></image>
+        <view>暂无耗材</view>
+        <view class="tip">请先在出入库页建档入库</view>
+      </view>
+
+      <view class="btn-row" style="margin-top:32rpx">
+        <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="switchAccount">重新登录</button></view>
+        <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submit" disabled="{{busy || diffCount === 0}}">提交（{{diffCount}} 项）</button></view>
+      </view>
+    </view>
+  </block>
+</view>

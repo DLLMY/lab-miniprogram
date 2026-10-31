@@ -97,6 +97,70 @@
           </view>
         </view>
       </view>
+      <!-- 操作日志查询（P2-㉑）：此前只能到腾讯文档看，系统内无审计入口 -->
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/logs/logs" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-log-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">操作日志</view>
+            <view class="grid-s">追溯与审计</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 数据迁移（仅超级管理员）：腾讯文档 8 表 → 云数据库。详见迁移方案文档 -->
+    <view wx:if="{{isSuper}}" class="card card-accent">
+      <view class="title">数据迁移 · 腾讯文档 → 云数据库</view>
+      <view class="sub">一次性操作：将腾讯文档 8 表全量导入云数据库（幂等、可重跑）。执行前请确认 8 个集合已建、权限为「所有用户不可读写」，且腾讯文档 access_token 未过期。</view>
+      <button class="btn btn-primary btn-block mt-m" bindtap="runMigrate">执行数据迁移</button>
+    </view>
+
+    <!-- 盘点 / 期初（教职工） -->
+    <view wx:if="{{isStaff}}" class="grid">
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/stocktake/stocktake" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-clipboard-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">库存盘点</view>
+            <view class="grid-s">账实核对与差异调整</view>
+          </view>
+        </view>
+      </view>
+      <view class="grid-i">
+        <view class="grid-c" data-url="/pages/stocktake/stocktake?mode=opening" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">期初建账</view>
+            <view class="grid-s">录入启用基线</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 个人机器人密钥（WorkBuddy 自然语言操作） -->
+    <view class="sec mt-l">
+      <view class="sec-bar"></view>
+      <view class="sec-t">个人机器人密钥</view>
+      <view class="sec-x">WorkBuddy</view>
+    </view>
+    <view class="card">
+      <view style="font-weight:600">用自然语言操作本系统</view>
+      <view class="list-sub">生成属于你本人的密钥后，把它填到 WorkBuddy 的 DOCS_PROXY_ROBOT_KEY，即可在 WorkBuddy 里用「查一下 A 柜物料」「列出我名下待处理报修」等自然语言查询与处理信息。密钥仅你本人可见，权限与你微信端完全一致。</view>
+
+      <block wx:if="{{robotKeyShown}}">
+        <view style="margin-top:20rpx;padding:20rpx;background:#0f172a;border-radius:12rpx;word-break:break-all;font-family:monospace;font-size:24rpx;color:#7dd3fc">{{robotKey}}</view>
+        <view style="margin-top:12rpx;color:#ef4444;font-size:24rpx">⚠ 密钥明文仅显示这一次，请立即复制保存。关闭后将无法再次查看，只能重置。</view>
+        <button class="btn btn-ghost btn-sm" style="margin-top:12rpx" bindtap="copyRobotKey">复制密钥</button>
+      </block>
+
+      <view style="margin-top:24rpx">
+        <button wx:if="{{!robotKeyShown && !hasRobotKey}}" class="btn btn-primary btn-block" loading="{{robotBusy}}" bindtap="genRobotKey">生成我的密钥</button>
+        <block wx:if="{{!robotKeyShown && hasRobotKey}}">
+          <button class="btn btn-primary btn-block" loading="{{robotBusy}}" bindtap="genRobotKey">重置密钥</button>
+          <button class="btn btn-ghost btn-block" style="margin-top:16rpx;color:#ef4444;border-color:#ef4444" bindtap="revokeRobotKey">吊销密钥</button>
+        </block>
+      </view>
     </view>
 
     <!-- 我的申请 -->
@@ -110,7 +174,6 @@
         <image class="empty-ic" src="/images/ic-inbox-s.png" mode="aspectFit"></image>
         <view>暂无申请记录</view>
         <view class="tip">当前身份：{{me ? me.id : '未登录'}} · 数据来源：{{srcText}}</view>
-        <view wx:if="{{srcText !== '真实腾讯文档'}}" class="tip">当前为演示数据：云函数未接真实腾讯文档。请「右键 docsProxy → 上传并部署」，并确认云端 USE_MOCK=false。</view>
       </view>
 
       <view wx:for="{{rs}}" wx:key="no" class="list-item">
@@ -118,10 +181,12 @@
         <view class="grow">
           <view class="list-nm">{{item.kind === 'tool' ? ('借出工具 · ' + item.toolId) : ('领用 ×' + item.qty)}}</view>
           <view class="list-sub">{{item.no}} · {{item.time}}</view>
+          <!-- 用途说明与驳回原因：申请人有权知道"为什么被拒"，这是 OA 的通行做法（P1-⑦⑧） -->
+          <view wx:if="{{item.reason}}" class="list-sub">用途：{{item.reason}}</view>
+          <view wx:if="{{item.reject}}" class="list-why">驳回原因：{{item.reject}}</view>
+          <view wx:if="{{item.status==='pending'}}" class="list-act" data-no="{{item.no}}" catchtap="cancelReq">撤回申请</view>
         </view>
-        <text class="pill {{item.status==='pending'?'warn':item.status==='approved'?'ok':'red'}}">
-          {{item.status==='pending'?'待审批':item.status==='approved'?'已通过':'已拒绝'}}
-        </text>
+        <text class="pill {{item.status==='pending'?'warn':item.status==='approved'?'ok':item.status==='canceled'?'grey':'red'}}">{{item.status==='pending'?'待审批':item.status==='approved'?'已通过':item.status==='canceled'?'已撤回':'已拒绝'}}</text>
       </view>
 
       <view wx:for="{{bs}}" wx:key="id" class="list-item">
@@ -129,8 +194,12 @@
         <view class="grow">
           <view class="list-nm">借出工具</view>
           <view class="list-sub">{{item.id}} · {{item.out}}</view>
+          <!-- 借期与逾期（P1-⑥）：借用不是无限期的，到期要有明确提示 -->
+          <view wx:if="{{item.plan && item.status==='借出'}}" class="list-sub {{item.overdue ? 'list-warn' : ''}}">
+            {{item.overdue ? '已逾期' : '应归还'}}：{{item.plan}}
+          </view>
         </view>
-        <text class="pill {{item.status==='借出'?'blue':'ok'}}">{{item.status}}</text>
+        <text class="pill {{item.status==='借出'?(item.overdue?'red':'blue'):'ok'}}">{{item.status}}</text>
       </view>
     </view>
 
@@ -145,20 +214,17 @@
         <view class="dl-dot {{diagOk ? 'ok' : 'warn'}}"></view>
         <text class="grow">{{diagText}}</text>
       </view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">主后端</text><text class="kv-v">{{diag.backend}}{{diag.dataBackend && diag.dataBackend !== diag.backend ? '（配置=' + diag.dataBackend + '）' : ''}}</text></view>
+      <view wx:if="{{diag}}" class="kv"><text class="kv-k">自检</text><text class="kv-v {{diag.ping === 'ok' ? 'kv-ok' : 'kv-warn'}}">{{diag.ping === 'ok' ? '通过' : (diag.ping || '未知')}}</text></view>
+      <view wx:if="{{diag && diag.backend === 'cloud'}}" class="kv"><text class="kv-k">云数据库</text><text class="kv-v {{diag.dbReady ? 'kv-ok' : 'kv-warn'}}">{{diag.dbReady ? (diag.note || '已连接') : '未初始化'}}</text></view>
       <view wx:if="{{diag}}" class="kv"><text class="kv-k">USE_MOCK</text><text class="kv-v">{{diag.rawUseMock}}</text></view>
-      <view wx:if="{{diag}}" class="kv"><text class="kv-k">文件 ID</text><text class="kv-v">{{diag.fileId}}</text></view>
-      <view wx:if="{{diag}}" class="kv"><text class="kv-k">凭证</text><text class="kv-v">token {{diag.accessToken || '空'}} / openid {{diag.openId || '空'}}</text></view>
-      <view wx:if="{{diag}}" class="kv"><text class="kv-k">token 到期</text><text class="kv-v">{{diag.tokenExp}}</text></view>
+      <view wx:if="{{diag && diag.backend !== 'cloud'}}" class="kv"><text class="kv-k">文件 ID</text><text class="kv-v">{{diag.fileId}}</text></view>
+      <view wx:if="{{diag && diag.backend !== 'cloud'}}" class="kv"><text class="kv-k">凭证</text><text class="kv-v">token {{diag.accessToken || '空'}} / openid {{diag.openId || '空'}}</text></view>
+      <view wx:if="{{diag && diag.backend !== 'cloud'}}" class="kv"><text class="kv-k">token 到期</text><text class="kv-v">{{diag.tokenExp}}</text></view>
+      <view wx:if="{{diag && !diag.useMock && ((diag.tokenDaysLeft >= 0 && diag.tokenDaysLeft <= 7) || diag.tokenDaysLeft <= -2)}}" class="kv"><text class="kv-k">token 临期</text><text class="kv-v kv-warn">{{diag.tokenDaysLeft >= 0 ? ('仅剩 ' + diag.tokenDaysLeft + ' 天，请尽快重新授权') : ('已过期约 ' + (-diag.tokenDaysLeft) + ' 天，全站不可用')}}</text></view>
       <view wx:if="{{diag}}" class="kv"><text class="kv-k">运行时</text><text class="kv-v">{{diag.node}} · {{diag.hasFetch ? 'fetch 可用' : 'https 模块（正常）'}}</text></view>
       <view wx:if="{{diag && diag.pingError}}" class="kv"><text class="kv-k">连通错误</text><text class="kv-v">{{diag.pingError}}</text></view>
       <button class="btn btn-ghost btn-block btn-sm mt-m" bindtap="runDiag">重新自检</button>
-    </view>
-
-    <!-- 演示数据管理 -->
-    <view wx:if="{{showReset}}" class="card card-accent">
-      <view class="title">演示数据管理</view>
-      <view class="sub">仅演示模式可用；接入真实腾讯文档后此入口自动隐藏。</view>
-      <button class="btn btn-danger btn-block mt-m" bindtap="resetDemo">重置演示数据</button>
     </view>
 
     <view class="tip" style="text-align:center">实训室管理系统 · Lab Management</view>

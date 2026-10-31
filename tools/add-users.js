@@ -24,7 +24,9 @@ const fs = require('fs')
 const path = require('path')
 const td = require('../cloudfunctions/docsProxy/tencentdocs.js')
 
-const ROLE_OK = ['student', 'teacher', 'admin']
+const ROLE_OK = ['student', 'teacher', 'admin', 'super']
+// 写入腾讯文档时统一存中文角色列（与手动在表格填的写法一致；normUser 读回时再收敛为英文）
+const ROLE_CN = { student: '学生', teacher: '教师', admin: '管理员', super: '超级管理员' }
 
 function parseCsv(text) {
   // 去 BOM
@@ -137,7 +139,7 @@ function parseCsv(text) {
       await td.addRecord('users', {
         [td.COL.users.id]: r.id,
         [td.COL.users.name]: r.name,
-        [td.COL.users.role]: r.role,
+        [td.COL.users.role]: ROLE_CN[r.role] || r.role,
         [td.COL.users.cls]: r.cls,
         [td.COL.users.status]: '启用',
         [td.COL.users.openid]: ''

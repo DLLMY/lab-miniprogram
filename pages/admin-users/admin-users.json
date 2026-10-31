@@ -1,4 +1,5 @@
 {
   "navigationBarTitleText": "用户与角色",
+  "enablePullDownRefresh": true,
   "usingComponents": {}
 }

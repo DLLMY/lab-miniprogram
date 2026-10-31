@@ -6,7 +6,7 @@
   </view>
 
   <view class="row-between mb-m">
-    <view class="muted">仅管理员可见 · 数据存于用户表</view>
+    <view class="muted">仅管理员 / 超级管理员可见 · 数据存于用户表</view>
     <button class="btn btn-primary btn-sm" bindtap="openAdd">+ 新增用户</button>
   </view>
 
@@ -21,15 +21,21 @@
     <view class="grow">
       <view class="u-line">
         <text class="u-name">{{item.name}}</text>
-        <text class="role-tag {{item.role==='admin'?'role-admin':item.role==='teacher'?'role-teacher':'role-student'}}">{{item.role==='admin'?'管理员':item.role==='teacher'?'教师':'学生'}}</text>
+        <text class="role-tag {{item.role==='admin'?'role-admin':item.role==='teacher'?'role-teacher':item.role==='super'?'role-super':'role-student'}}">{{item.role==='admin'?'管理员':item.role==='teacher'?'教师':item.role==='super'?'超级管理员':'学生'}}</text>
         <text class="pill {{item.status==='停用'?'grey':'ok'}}">{{item.status||'启用'}}</text>
         <text wx:if="{{item.bound}}" class="pill cyan">已绑微信</text>
       </view>
       <view class="u-sub">工号 {{item.id}}<text wx:if="{{item.cls}}"> · 班级 {{item.cls}}</text></view>
     </view>
     <view class="u-ops">
-      <view class="u-op" data-u="{{item}}" bindtap="openEdit">编辑</view>
-      <view class="u-op danger" data-u="{{item}}" bindtap="del">删除</view>
+      <!-- 管理员/超级管理员账号只能由超级管理员操作；普通管理员仅可管理学生/教师 -->
+      <block wx:if="{{isSuper || item.role==='student' || item.role==='teacher'}}">
+        <view class="u-op" data-u="{{item}}" bindtap="openEdit">编辑</view>
+        <!-- 停用 / 启用放在删除之前：这是人员离岗的正确处理方式，删除仅用于清理错录账号 -->
+        <view class="u-op danger" wx:if="{{item.disable}}" data-u="{{item}}" bindtap="del">删除</view>
+        <view class="u-op" wx:else data-u="{{item}}" bindtap="toggleStatus">{{item.status==='停用'?'启用':'停用'}}</view>
+      </block>
+      <view wx:else class="u-op muted">需超级管理员操作</view>
     </view>
   </view>
 
@@ -40,7 +46,7 @@
 
       <view class="field">
         <view class="field-l">工号 <text class="muted">(新增后不可修改，作为账号主键)</text></view>
-        <input class="inp" value="{{form.id}}" placeholder="如 T001 / S002" disabled="{{editing}}" bindinput="onId" />
+        <input class="inp" value="{{form.id}}" placeholder="请输入工号" disabled="{{editing}}" bindinput="onId" />
       </view>
       <view class="field">
         <view class="field-l">姓名</view>
@@ -54,7 +60,7 @@
       </view>
       <view class="field">
         <view class="field-l">班级</view>
-        <input class="inp" value="{{form.cls}}" placeholder="选填，如 23电子1班" bindinput="onCls" />
+        <input class="inp" value="{{form.cls}}" placeholder="选填，班级" bindinput="onCls" />
       </view>
       <view class="field">
         <view class="field-l">状态</view>

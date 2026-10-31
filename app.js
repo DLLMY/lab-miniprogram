@@ -4,12 +4,13 @@ const identity = require('./utils/identity.js')
 
 App({
   globalData: {
-    DEMO: true,                       // 演示模式：mock 数据 + 本地身份表；生产 openid→users 表
+    DEMO: false,                      // 生产模式：走真实云环境（openid→users 表）；本地 mock 仅作离线回退
     role: 'student',
     me: { id: '', name: '', role: 'student' },
     identity: null,                   // 当前身份 { id, name, role }，未登录为 null
-    // 云开发环境 ID（已开通：环境名 cloud1 / 应用「数字个人档案」）
-    // 保持占位 'your-cloud-env-id' 会自动回退本地 mock；当前已填真实值 → 走云函数 docsProxy
+    // 云开发环境 ID（生产环境，须与上线 AppID 同主体）：
+    // 保持占位 'your-cloud-env-id' 会自动回退本地 mock；填真实值 → 走云函数 docsProxy。
+    // ⚠️ 上线替换：换学校生产 AppID 后，必须在本账号下重新开通云开发，并把此值改为新环境 ID。
     env: 'cloud1-d7gw1366xdb7ac348'
   },
   onLaunch() {

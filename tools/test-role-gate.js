@@ -41,10 +41,23 @@ function check(name, cond, detail) {
   else { fail++; console.log('  ❌ ' + name + (detail ? ' → ' + detail : '')) }
 }
 
-// 场景 1：干净环境，直接登录 T001
-console.log('\n场景 1：干净存储直接登录教师 T001')
+// mock 用户表：seed.users 已按上线安全要求清空（不随包分发真实工号+姓名），
+// 本地演示账号改由 lab_mock 显式提供——生产走云端 users 表，见 mock.js 顶部注释。
+function mockDb() {
+  return {
+    users: [
+      { id: 'S001', name: '张三', role: 'student', cls: '24电气1' },
+      { id: 'T001', name: '邓老师', role: 'teacher', cls: '' },
+      { id: 'A001', name: '王管理员', role: 'admin', cls: '' }
+    ],
+    materials: [], tools: [], requisitions: [], borrow: [], stock_io: [], access: [], logs: []
+  }
+}
+
+// 场景 1：lab_mock 提供教师账号，登录成功且能过闸
+console.log('\n场景 1：lab_mock 提供教师账号 T001')
 async function s1() {
-  const { identity, app, store } = makeRuntime({})
+  const { identity, app, store } = makeRuntime({ lab_mock: mockDb() })
   const u = await identity.login('T001')
   check('登录成功', !!u, u && u.id + '/' + u.role)
   check('globalData.role=teacher', app.globalData.role === 'teacher', 'role=' + app.globalData.role)
@@ -52,19 +65,16 @@ async function s1() {
   check('storage 已写入身份', !!store['lab_identity'], JSON.stringify(store['lab_identity']))
 }
 
-// 场景 2：旧版 lab_mock 把 T001 存成了学生（本次报障最可能的原因）
-console.log('\n场景 2：旧缓存 lab_mock 里 T001 的 role 是 student（脏种子）')
+// 场景 2：lab_mock 里角色写法不规范（'Teacher'）—— normalizeRole 归一为 teacher 后放行
+// （旧场景「种子自动校正」已随 seed.users 清空废止：mock 不再内置账号、不再静默改写用户表，
+//  脏写法容忍由 identity.normalizeRole 负责）
+console.log('\n场景 2：lab_mock 角色写法不规范（Teacher）')
 async function s2() {
-  const staleMock = {
-    users: [
-      { id: 'S001', name: '张三', role: 'student', cls: '24电气1' },
-      { id: 'T001', name: '邓老师', role: 'student', cls: '' }
-    ],
-    materials: [], tools: [], requisitions: [], borrow: [], stock_io: [], access: [], logs: []
-  }
-  const { identity, app } = makeRuntime({ lab_mock: staleMock })
+  const db = mockDb()
+  db.users = db.users.map(u => u.id === 'T001' ? Object.assign({}, u, { role: 'Teacher' }) : u)
+  const { identity, app } = makeRuntime({ lab_mock: db })
   const u = await identity.login('T001')
-  check('登录后角色被校正', u && u.role === 'teacher', u && u.role)
+  check('登录后角色被归一化', u && u.role === 'teacher', u && u.role)
   check('globalData.role=teacher', app.globalData.role === 'teacher', 'role=' + app.globalData.role)
   check('教师能过闸', gate(identity) === true)
 }
@@ -96,8 +106,29 @@ function s5() {
   check('未登录被拦', gate(identity) === false)
 }
 
+// 场景 6：超级管理员角色归一化与权限判定
+console.log('\n场景 6：超级管理员 identity 判定')
+function s6() {
+  const { identity } = makeRuntime({ lab_identity: { id: 'T001', name: '邓老师', role: '超级管理员' } })
+  check('normalizeRole 容错「超级管理员」→ super', identity.normalizeRole('超级管理员') === 'super')
+  check('isAdmin 对 super 为真', identity.isAdmin() === true)
+  check('isSuper 对 super 为真', identity.isSuper() === true)
+  check('roleText(super)=超级管理员', identity.roleText('super') === '超级管理员')
+}
+
+// 场景 7：管理员 isAdmin 真、isSuper 假；学生两者皆假
+console.log('\n场景 7：管理员 vs 学生 的判定边界')
+function s7() {
+  const admin = makeRuntime({ lab_identity: { id: 'A001', name: '王管理员', role: 'admin' } })
+  check('管理员 isAdmin 真', admin.identity.isAdmin() === true)
+  check('管理员 isSuper 假', admin.identity.isSuper() === false)
+  const stu = makeRuntime({ lab_identity: { id: 'S001', name: '张三', role: 'student' } })
+  check('学生 isAdmin 假', stu.identity.isAdmin() === false)
+  check('学生 isSuper 假', stu.identity.isSuper() === false)
+}
+
 ;(async () => {
-  await s1(); await s2(); s3(); await s4(); s5()
+  await s1(); await s2(); s3(); await s4(); s5(); s6(); s7()
   console.log('\n结果：pass=' + pass + ' fail=' + fail)
   process.exit(fail ? 1 : 0)
 })()

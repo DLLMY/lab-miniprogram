@@ -1,0 +1,14 @@
+/* pages/labs/labs.wxss · 复用 app.wxss 设计系统，仅补充页面专属类 */
+.mb-m { margin-bottom: 24rpx; }
+
+/* 行内操作小按钮（编辑 / 删除） */
+.u-op {
+  font-size: 25rpx;
+  color: #2B6CFF;
+  padding: 8rpx 22rpx;
+  border-radius: 14rpx;
+  background: #F1F6FF;
+  text-align: center;
+  margin-left: 12rpx;
+}
+.u-op.danger { color: #DC2626; background: rgba(239, 68, 68, .10); }

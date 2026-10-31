@@ -238,6 +238,7 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 .role-teacher { background: rgba(34, 211, 238, .14); color: #0891B2; }
 .role-student { background: rgba(43, 108, 255, .12); color: #2B6CFF; }
 .role-admin { background: rgba(245, 158, 11, .14); color: #D97706; }
+.role-super { background: rgba(168, 85, 247, .16); color: #7C3AED; }
 
 /* ---------- 头像 ---------- */
 .avatar {
@@ -303,8 +304,10 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 .go::after { border: none; }
 .primary { background: linear-gradient(135deg, #2B6CFF 0%, #1D4FD8 100%); color: #fff; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
 .primary::after { border: none; }
-.ok { background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #fff; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
-.ok::after { border: none; }
+/* 注意：这里原来是裸 .ok，会污染 .pill.ok / .dist-n.ok（胶囊被撑成 92rpx 高、文字错位），
+   且无任何按钮使用裸 ok 类，故改名为 .btn-ok 以隔离命名空间。 */
+.btn-ok { background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #fff; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
+.btn-ok::after { border: none; }
 .btn-warn { background: rgba(245, 158, 11, .12); color: #D97706; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
 .btn-warn::after { border: none; }
 .scan-btn {

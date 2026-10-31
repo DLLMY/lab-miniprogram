@@ -40,10 +40,14 @@
       { "type": "folder", "value": "backup" },
       { "type": "folder", "value": "test" },
       { "type": "folder", "value": "preview" },
+      { "type": "folder", "value": "mcp" },
+      { "type": "folder", "value": "docs" },
       { "type": "suffix", "value": ".md" },
       { "type": "suffix", "value": ".py" }
     ],
-    "include": []
+    "include": [
+      { "type": "folder", "value": "images" }
+    ]
   },
   "editorSetting": {}
 }

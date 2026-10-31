@@ -1,0 +1,76 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">仅管理员可查看全量操作日志<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+  </view>
+
+  <block wx:else>
+    <view class="hero lg-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-t">操作日志</view>
+        <view class="hero-s">{{tab==='access' ? '门禁刷卡记录 · 用于追溯与审计' : '谁在什么时间做了什么 · 用于追溯与审计'}}</view>
+        <view class="lg-total">
+          <view class="lg-n">{{total}}</view>
+          <view class="lg-l">条记录（当前筛选）</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="page">
+      <!-- 操作日志 / 门禁记录 分段（P3-㉑） -->
+      <view class="seg">
+        <view class="seg-i {{tab==='log'?'on on-cyan':''}}" bindtap="setTab" data-t="log">操作日志</view>
+        <view class="seg-i {{tab==='access'?'on':''}}" bindtap="setTab" data-t="access">门禁记录</view>
+      </view>
+
+      <!-- 筛选 -->
+      <view class="card card-tight">
+        <view class="flt">
+          <input class="flt-i" placeholder="操作人" placeholder-class="inp-ph" value="{{fActor}}" data-k="fActor" bindinput="onFilter" />
+          <input wx:if="{{tab==='log'}}" class="flt-i" placeholder="对象 ID" placeholder-class="inp-ph" value="{{fTarget}}" data-k="fTarget" bindinput="onFilter" />
+        </view>
+        <view wx:if="{{tab==='log'}}" class="flt mt-s">
+          <picker mode="selector" range="{{opOptions}}" bindchange="onOpFilter">
+            <view class="flt-p">{{fOp || '全部操作类型'}}</view>
+          </picker>
+        </view>
+        <view class="flt mt-s">
+          <picker mode="date" value="{{fFrom}}" bindchange="onFrom">
+            <view class="flt-p">{{fFrom || '起始日期'}}</view>
+          </picker>
+          <picker mode="date" value="{{fTo}}" bindchange="onTo">
+            <view class="flt-p">{{fTo || '结束日期'}}</view>
+          </picker>
+          <view class="flt-btn" bindtap="resetFilter">重置</view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view wx:if="{{!rows.length}}" class="empty">
+          <image class="empty-ic" src="/images/ic-log-s.png" mode="aspectFit"></image>
+          <view>没有符合条件的日志</view>
+          <view class="tip">调整筛选条件，或重置后重试</view>
+        </view>
+        <view wx:for="{{rows}}" wx:key="key" class="lg-row">
+          <view class="lg-time">{{item.time}}</view>
+          <view class="grow">
+            <view class="row-between">
+              <view class="list-nm">{{item.op}}</view>
+              <text class="pill {{item.failed ? 'red' : 'ok'}}">{{item.result || '成功'}}</text>
+            </view>
+            <view class="list-sub">{{item.actor}}<block wx:if="{{tab==='log'}}"> · 对象 {{item.target || '—'}}</block></view>
+          </view>
+        </view>
+        <view wx:if="{{hasMore}}" class="more {{loading ? 'busy' : ''}}" bindtap="loadMore">{{loading ? '加载中…' : '加载更多'}}</view>
+        <view wx:elif="{{rows.length}}" class="more end">已显示全部 {{total}} 条</view>
+      </view>
+
+      <view class="btn-row mt-m">
+        <view class="btn-cell"><button class="btn btn-ghost btn-block btn-sm" bindtap="exportLogs">导出日志 CSV</button></view>
+      </view>
+    </view>
+  </block>
+</view>
