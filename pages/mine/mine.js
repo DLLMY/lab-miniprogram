@@ -4,7 +4,7 @@ const identity = require('../../utils/identity.js')
 const mock = require('../../utils/mock.js')
 
 Page({
-  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isSuper: false, isDemo: false, showReset: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false, migrateBackend: '',
+  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isDemo: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false,
     // 个人机器人密钥（WorkBuddy 自然语言操作自服务）
     robotKey: '', robotKeyShown: false, hasRobotKey: false, robotBusy: false },
 
@@ -61,7 +61,6 @@ Page({
       roleText: i ? identity.roleText(i.role) : '未登录',
       isStaff: identity.isStaff(),
       isAdmin: identity.isAdmin(),
-      isSuper: identity.isSuper(),
       isDemo: !!(app && app.globalData && app.globalData.DEMO)
     })
     await this.runDiag()
@@ -69,18 +68,11 @@ Page({
     const be = (app && app.globalData && app.globalData.dataBackend) ||
       (app && app.globalData && app.globalData.dataSource) || ''
     const srcText = api.backendLabel(be) || '未知'
-    // 迁移卡片按当前后端决定是否展示「从腾讯文档迁入」操作：
-    // 已切到云数据库 → 显示「已迁移」状态（不再提示从腾讯文档导入）；
-    // 仍为腾讯文档 → 显示可执行的迁移入口；演示模式 → 提示不可用。
-    const migrateBackend = (this.data.diag && this.data.diag.backend) || be || ''
-    // 「重置演示数据」仅在本地演示（mock，数据只在本机）时可见：走真实后端后点了也只清本地 mock，会误导
     this.setData({
       rs: (d && d.requisitions) || [],
       bs: (d && d.borrow) || [],
       srcText,
-      srcOk: be === 'cloud' || be === 'tencent',
-      showReset: be === 'mock',
-      migrateBackend
+      srcOk: be === 'cloud' || be === 'tencent'
     })
     await this.loadRobotStatus()
   },
@@ -194,57 +186,4 @@ Page({
       wx.hideLoading()
     }
   },
-  resetDemo() {
-    wx.showModal({
-      title: '重置演示数据',
-      content: '将清空所有领用/借还/出入库记录并恢复初始演示数据，确定？',
-      confirmText: '重置',
-      success: (r) => {
-        if (r.confirm) {
-          mock.reset()
-          wx.showToast({ title: '已重置', icon: 'success' })
-          this.onShow()
-        }
-      }
-    })
-  },
-  // 数据迁移（仅超级管理员）：腾讯文档 8 表 → 云数据库。见《数据层迁移方案-腾讯文档到云数据库.md》
-  // 用 callFull + noFallback：迁移是一次性真实写操作，绝不能回退到本地 mock 静默成功。
-  async runMigrate() {
-    const c = await new Promise(res => wx.showModal({
-      title: '执行数据迁移',
-      content: '将把腾讯文档 8 表全量写入云数据库（幂等，可重跑补齐）。期间请勿关闭小程序，约需数秒到十几秒。确定？',
-      confirmText: '开始迁移',
-      success: res
-    }))
-    if (!c.confirm) return
-    wx.showLoading({ title: '迁移中…', mask: true })
-    try {
-      const r = await api.callFull('migrate', {}, { noFallback: true })
-      if (r && r.code === 0) {
-        const t = (r.data && r.data.tables) || []
-        const lines = t.map(x => '· ' + x.table + '：写入 ' + x.written + ' / 源 ' + x.srcTotal + (x.dropUnknown ? ('（忽略 ' + x.dropUnknown + ' 列）') : '')).join('\n')
-        wx.hideLoading()
-        wx.showModal({
-          title: '迁移完成',
-          content: '各表（写入/源总量）：\n' + lines,
-          showCancel: false, confirmText: '好的'
-        })
-      } else {
-        wx.hideLoading()
-        wx.showModal({
-          title: '迁移失败',
-          content: ((r && r.data && r.data.msg) || '未知错误') + '\n（已部分写入，可重新点击补齐）',
-          showCancel: false, confirmText: '知道了'
-        })
-      }
-    } catch (e) {
-      wx.hideLoading()
-      wx.showModal({
-        title: '迁移异常',
-        content: ((e && e.message) || ('' + e)) + '\n（已部分写入，可重新点击补齐）',
-        showCancel: false, confirmText: '知道了'
-      })
-    }
-  }
 })
