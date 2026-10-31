@@ -8,6 +8,7 @@
     "start": "node docs-proxy-server.js"
   },
   "dependencies": {
-    "@cloudbase/node-sdk": "^2.8.0"
+    "@cloudbase/node-sdk": "^2.8.0",
+    "xlsx": "^0.18.5"
   }
 }

@@ -1,6 +1,6 @@
 // utils/identity.js
 // 身份体系：工号/学号 → users 表定角色，本地持久化，单点同步进 app.globalData。
-// 身份来源（已实现云端优先）：配置了云环境 → 查腾讯文档 users 表（findUser/whoami）；
+// 身份来源（已实现云端优先）：配置了云环境 → 查真实后端 users 表（findUser/whoami）；
 //   未配云或云端不可用 → 回落本地 mock users 表。其余（持久化/globalData 同步）不变，各页面零改动。
 // 注意：mock.js/api.js 在 require 时会读 storage，故此处用惰性 require，避免 app.js 加载期调用 wx API。
 
@@ -31,7 +31,7 @@ function cloudReady() {
   }
 }
 
-// 查用户：优先云端 users 表（老师名单以腾讯文档为准），云端不可用/未命中再回落本地 mock。
+// 查用户：优先云端 users 表（老师名单以真实后端为准），云端不可用/未命中再回落本地 mock。
 // 异步化：云端查询是网络调用。api/mock 都用惰性 require，避免 app.js 加载期调用 wx 读 storage。
 async function lookup(id) {
   id = ('' + (id || '')).trim().toUpperCase()

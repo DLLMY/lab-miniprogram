@@ -32,7 +32,7 @@ console.log('[docsProxy] 启动：USE_MOCK=' + (ENV.RAW_USE_MOCK === undefined ?
    真实鉴权仅在 prodHandler 中生效，详见切换处 USE_MOCK 三元判断。 */
 const seed = {
   // 演示账号已清空：仅 USE_MOCK 模式使用，不应内置真实工号+姓名（与真实 users 表同名同号，泄露风险）。
-  // 生产走真实腾讯文档；纯 mock 模式登录将无可用账号（仅演示回退用，可接受）。
+  // 生产走真实后端（腾讯文档或微信云数据库）；纯 mock 模式登录将无可用账号（仅演示回退用，可接受）。
   users: [],
   materials: [
     { id: 'M001', name: '电阻包(1kΩ)', cat: '电子耗材', unit: '包', safe: 10, stock: 25, loc: 'A柜1层' },
@@ -107,7 +107,9 @@ function describeRobotWrite(action, data, me) {
     updateInspection: '更新巡检（' + (d.id || '?') + '）',
     adminUpsertUser: '新增/修改用户（' + (d.id || '?') + '，角色 ' + (d.role || '?') + '）',
     adminDeleteUser: '删除用户（' + (d.id || '?') + '）',
-    migrate: '执行数据迁移（腾讯文档→云数据库）'
+    migrate: '执行数据迁移（腾讯文档→云数据库）',
+    importMaterials: '批量导入耗材清单（' + (d.rows ? d.rows.length : 0) + ' 条）',
+    importTools: '批量导入工具清单（' + (d.rows ? d.rows.length : 0) + ' 条）'
   }
   const base = map[action] || ('执行写操作 ' + action)
   return '【' + who + '】将' + base + '。确认执行请回复「确认」。'
@@ -117,7 +119,8 @@ const ROBOT_WRITE = new Set([
   'requisition', 'toolRequisition', 'cancelReq', 'io', 'batchIo', 'approve', 'addMaterial',
   'stocktake', 'borrow', 'returnTool', 'access', 'reverseIO', 'exportData',
   'addLab', 'updateLab', 'deleteLab', 'addRepair', 'updateRepair',
-  'addInspection', 'updateInspection', 'adminUpsertUser', 'adminDeleteUser', 'migrate'
+  'addInspection', 'updateInspection', 'adminUpsertUser', 'adminDeleteUser', 'migrate',
+  'importMaterials', 'importTools'
 ])
 
 function mat(id) { return DB.materials.find(m => m.id === id) }
@@ -904,6 +907,9 @@ async function prodHandler(action, data, openid, tdModule, robotMode, robotPaylo
     case 'approve': { const g = gStaff(); if (g) return g; if (data) data.actor = me.id; return run(() => td.approve(data)) }
     case 'io': { const g = gStaff(); if (g) return g; if (data) data.actor = me.id; return run(() => td.io(data)) }
     case 'addMaterial': { const g = gStaff(); if (g) return g; if (data) data.actor = me.id; return run(() => td.addMaterial(data)) }
+    // 批量导入耗材清单（设备清单）：管理员专属——一次性把 Excel 解析后的多行写入 materials。
+    case 'importMaterials': { const g = gAdmin(); if (g) return g; if (data) data.actor = me.id; return run(() => td.importMaterials(data)) }
+    case 'importTools': { const g = gAdmin(); if (g) return g; if (data) data.actor = me.id; return run(() => td.importTools(data)) }
     // 库存盘点 / 期初建账：会直接改库存基准，权限同手动出入库（教师及以上）。
     // ⚠ 此前只实现了 tencentdocs.stocktake 与 mockHandler 侧，prodHandler 漏了本路由 →
     //   生产环境点「库存盘点」会落到 default 分支返回 {code:404,msg:'unknown action'}，
@@ -1051,7 +1057,7 @@ exports.main = async (event) => {
   }
 
   // ===== 自检接口：不走 mock/prod 分支，直接回云端真实运行态 ====
-  // 用途：前端「我的」页一键显示"到底跑的是 mock 还是真腾讯文档"，不用再翻云端日志。
+  // 用途：前端「我的」页一键显示"到底跑的是 mock 还是真后端（腾讯文档/云数据库）"，不用再翻云端日志。
   // 若当前是生产模式，还会真实读一次 materials 表，验证凭证/表格是否真的通。
   if (action === 'diag') {
     // ⚠ 安全：diag 限定为已登录用户（见下），生产态会真实打一次主后端 API + 回显指纹。

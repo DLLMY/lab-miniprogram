@@ -6,12 +6,35 @@
 // ② 云调用整体 try/catch 兜住同步 throw；③ 本 Promise 永不 reject，页面无需 try/catch。
 const mock = require('./mock.js')
 
-// 标记本次取数来源，供页面显示「数据来源」，避免云函数没生效时误以为看到的是真实数据
-function markSource(src) {
+// 标记本次取数来源与真实后端，供页面显示「数据来源」，避免云函数没生效时误以为看到的是真实数据。
+// src：'mock'(云函数内演示/未部署) | 'cloud'(真实后端已生效)；
+// backend：'tencent'(腾讯文档) | 'cloud'(微信云数据库) | 'mock'，来自云函数每响应的 r.backend 字段。
+// 关键：切到云数据库后 dataBackend 是 'cloud'，必须据此显示「微信云数据库」而非「腾讯文档」。
+function markSource(src, backend) {
   try {
     const app = getApp()
-    if (app && app.globalData) app.globalData.dataSource = src
+    if (app && app.globalData) {
+      app.globalData.dataSource = (src === 'mock') ? 'mock' : 'cloud'
+      if (backend) app.globalData.dataBackend = backend
+    }
   } catch (e) { /* 忽略 */ }
+}
+// 本地演示（云函数未连接，或云端 USE_MOCK 仍为 true）：dataSource/backend 均为 'mock'
+function markMock() {
+  try {
+    const app = getApp()
+    if (app && app.globalData) {
+      app.globalData.dataSource = 'mock'
+      app.globalData.dataBackend = 'mock'
+    }
+  } catch (e) { /* 忽略 */ }
+}
+// 真实后端标识 → 用户可见文案
+function backendLabel(b) {
+  if (b === 'cloud') return '微信云数据库'
+  if (b === 'tencent') return '腾讯文档'
+  if (b === 'mock') return '本地演示数据'
+  return '未知'
 }
 
 function cloudEnvOk() {
@@ -48,7 +71,7 @@ function call(action, data = {}) {
     const done = (v) => { if (!settled) { settled = true; resolve(v) } }
     const fallback = (why) => {
       console.warn('[api] 回退本地 mock (' + why + '), action=' + action)
-      markSource('mock')
+      markMock()
       try {
         const r = mock.dispatch(action, data)
         done(r && r.code === 0 ? r.data : null) // 与云路径一致：业务错误（如库存不足）→ null
@@ -75,9 +98,9 @@ function call(action, data = {}) {
       withTimeout(cp)
         .then((res) => {
           const r = (res && res.result) || {}
-          // 云函数会回 src：mock=云函数内演示数据（说明 USE_MOCK 还是 true），cloud=真实腾讯文档
+          // 云函数会回 src：mock=云函数内演示数据（说明 USE_MOCK 还是 true），cloud=真实后端已生效（腾讯文档或微信云数据库）
           const src = r.src || '?'
-          markSource(src === 'mock' ? 'mock' : 'cloud')
+          markSource(src, r.backend)
           // 每个 action 都打一行返回摘要，一眼看出「云端返回了什么」（不依赖云端日志）
           let brief = ''
           if (action === 'listMine') {
@@ -122,7 +145,7 @@ function callFull(action, data = {}, opts) {
     let settled = false
     const done = (v) => { if (!settled) { settled = true; resolve(v) } }
     const mockFallback = () => {
-      try { markSource('mock'); return mock.dispatch(action, data) } catch (e) { return null }
+      try { markMock(); return mock.dispatch(action, data) } catch (e) { return null }
     }
     const canCloud = cloudEnvOk() && !!wx.cloud && typeof wx.cloud.callFunction === 'function'
     if (!canCloud) {
@@ -141,7 +164,7 @@ function callFull(action, data = {}, opts) {
       withTimeout(cp)
         .then((res) => {
           const r = (res && res.result) || {}
-          markSource(r.src === 'mock' ? 'mock' : 'cloud')
+          markSource(r.src, r.backend)
           done(r)
         }, () => {
           // 传输层失败（网络断 / 云函数未部署 / 超时）：noFallback 时返回 503 让上层告知用户，
@@ -155,7 +178,7 @@ function callFull(action, data = {}, opts) {
 }
 
 // 当前数据来源是否为本地演示（云函数未连接，或云端 USE_MOCK 仍为 true）。
-// 测试时最大的误导是「云函数明明没生效，却因为 mock 有反应而以为数据已落腾讯文档」。
+// 测试时最大的误导是「云函数明明没生效，却因为 mock 有反应而以为数据已落云端」。
 function isDemoData() {
   try {
     const app = getApp()
@@ -173,10 +196,10 @@ function isDemoData() {
 // 明确告知结果只保存在本机，避免把「本机 mock 有反应」误当成「云函数已生效」。
 function warnIfDemo() {
   if (!isDemoData()) return
-  console.warn('[api] 演示模式写操作：结果仅保存在本机 mock，不会写入腾讯文档')
+  console.warn('[api] 演示模式写操作：结果仅保存在本机 mock，不会写入云端')
   try {
     wx.showToast({ title: '演示模式：仅保存在本机', icon: 'none', duration: 2500 })
   } catch (e) { /* 忽略 */ }
 }
 
-module.exports = { call, callFull, isDemoData, warnIfDemo }
+module.exports = { call, callFull, isDemoData, warnIfDemo, backendLabel }

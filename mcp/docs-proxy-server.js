@@ -42,6 +42,98 @@ const TCB_ENV = (process.env.TCB_ENV || '').trim()
 // 显式覆盖传输方式（用于测试或强制）：http | sdk | stub
 const TRANSPORT = (process.env.LAB_MCP_TRANSPORT || '').trim().toLowerCase()
 
+// —— 设备/工具清单（Excel）解析：把任意表头映射为字段 ——
+// resourceType: 'material'（默认，耗材）或 'tool'（工具）。列名容错：中文表头按别名模糊匹配，
+// 用户无需严格命名。未识别的列会被忽略并提示。
+const FIELD_ALIASES = {
+  material: {
+    id: ['id', '编号', '物料编码', '物料号', '物料id', '耗材id', '设备编号', '编码', '货号'],
+    name: ['名称', '物品名称', '物料名称', '品名', '设备名称', '耗材名称', '物料'],
+    spec: ['规格', '型号', '参数', '规格型号'],
+    cat: ['类别', '分类', '类型', '种类', '物品类别'],
+    loc: ['存放位置', '位置', '库位', '货架', '存放地点', '仓位', '地点'],
+    stock: ['当前库存', '库存', '数量', '期初库存', '结存', '现存', '余量', '库存数量'],
+    unit: ['单位', '计量单位', '单位名称'],
+    safe: ['预警线', '安全库存', '最低库存', '警戒线', '预警库存', '预警']
+  },
+  tool: {
+    id: ['id', '编号', '工具编号', '设备编号', '编码', '货号', '资产编号'],
+    name: ['名称', '物品名称', '工具名称', '设备名称', '器具名称', '品名'],
+    spec: ['规格', '型号', '参数', '规格型号'],
+    loc: ['存放位置', '位置', '库位', '货架', '存放地点', '仓位', '地点'],
+    status: ['状态', '当前状态', '使用情况'],
+    holder: ['持有人', '保管人', '当前持有人', '责任人', '使用人', '领用人']
+  }
+}
+function _normHeader(h) {
+  return ('' + (h == null ? '' : h)).trim().toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]/gi, '')
+}
+function _buildAliasIndex(aliases) {
+  const idx = []
+  for (const field of Object.keys(aliases)) {
+    for (const a of aliases[field]) idx.push({ field, norm: _normHeader(a) })
+  }
+  return idx
+}
+function _matchField(headerRaw, aliasIndex) {
+  const h = _normHeader(headerRaw)
+  if (!h) return null
+  let best = null
+  for (const e of aliasIndex) {
+    if (!e.norm) continue
+    if (h === e.norm || h.indexOf(e.norm) >= 0 || e.norm.indexOf(h) >= 0) {
+      if (!best || e.norm.length > best.norm.length) best = e
+    }
+  }
+  return best ? best.field : null
+}
+
+// 读 Excel：返回 { ok, rows, headers, unmapped, errors, resourceType }
+function parseDeviceListFile(filePath, sheetName, resourceType) {
+  const rt = resourceType === 'tool' ? 'tool' : 'material'
+  const aliasIndex = _buildAliasIndex(FIELD_ALIASES[rt])
+  const nameHint = rt === 'tool' ? '名称/工具名称/设备名称/品名' : '名称/物品名称/物料名称/品名'
+  let X
+  try { X = require('xlsx') } catch (e) { return { ok: false, errors: ['未安装 xlsx：请在 mcp/ 目录执行 `npm install xlsx`。'] } }
+  if (!fs.existsSync(filePath)) return { ok: false, errors: ['文件不存在：' + filePath] }
+  let wb
+  try { wb = X.readFile(filePath) } catch (e) { return { ok: false, errors: ['Excel 解析失败：' + e.message] } }
+  if (!wb.SheetNames.length) return { ok: false, errors: ['工作簿没有任何工作表'] }
+  const sheet = sheetName && wb.SheetNames.indexOf(sheetName) >= 0 ? sheetName : wb.SheetNames[0]
+  const ws = wb.Sheets[sheet]
+  const data = X.utils.sheet_to_json(ws, { defval: '' })
+  if (!data.length) return { ok: false, errors: ['工作表[' + sheet + ']没有数据行（请确保首行为表头）'] }
+  const headers = Object.keys(data[0])
+  const colMap = {}
+  const unmapped = []
+  for (const h of headers) {
+    const f = _matchField(h, aliasIndex)
+    if (f && !colMap[f]) colMap[f] = h
+    else if (!f) unmapped.push(h)
+  }
+  if (!colMap.name) return { ok: false, errors: ['未识别到「名称」列，无法导入。请将名称所在列命名为：' + nameHint + '。'] }
+  const rows = data.map((r) => {
+    const get = (f) => (colMap[f] != null ? r[colMap[f]] : '')
+    const base = {
+      id: ('' + (get('id') || '')).trim(),
+      name: ('' + (get('name') || '')).trim(),
+      spec: ('' + (get('spec') || '')).trim(),
+      loc: ('' + (get('loc') || '')).trim()
+    }
+    if (rt === 'tool') {
+      base.status = ('' + (get('status') || '')).trim() || '正常'
+      base.holder = ('' + (get('holder') || '')).trim()
+    } else {
+      base.cat = ('' + (get('cat') || '')).trim()
+      base.stock = ('' + (get('stock') || '')).trim()
+      base.unit = ('' + (get('unit') || '')).trim()
+      base.safe = ('' + (get('safe') || '')).trim()
+    }
+    return base
+  }).filter(r => r.name)
+  return { ok: true, rows, sheet, headers, colMap, unmapped, total: data.length, resourceType: rt }
+}
+
 // 只读查询白名单（fail-closed，未列出的 action 一律拒绝）。
 const READ_ACTIONS = [
   'getItem',        // 单物料详情
@@ -71,7 +163,9 @@ const WRITE_ACTIONS = [
   'addRepair',       // 提交报修
   'updateRepair',    // 更新报修
   'addInspection',   // 提交巡检
-  'updateInspection' // 更新巡检
+  'updateInspection',// 更新巡检
+  'importMaterials', // 批量导入耗材清单（Excel 解析后的多行，管理员专属）
+  'importTools'      // 批量导入工具清单（Excel 解析后的多行，管理员专属）
 ]
 
 // —— 工具定义（MCP tools/list 返回）——
@@ -139,6 +233,24 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: { sessionId: { type: 'string', description: '可选：会话标识，默认当前会话' } }
+    }
+  },
+  {
+    name: 'lab_import',
+    description: '把本地 Excel 清单批量导入实训室管理系统。' +
+      'resourceType="material"（默认）导入「耗材」集合（materials，字段：名称/规格/类别/存放位置/当前库存/单位/预警线/编号）；' +
+      'resourceType="tool" 导入「工具」集合（tools，字段：名称/规格/存放位置/状态/持有人/编号）。' +
+      '自动按列名模糊映射字段，无需严格表头。' +
+      '默认先解析并预览（dryRun），确认字段映射无误后再正式调用 lab_import（设 dryRun:false）触发二次确认写入。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: '本地 Excel 清单的绝对路径，如 D:/清单/设备清单.xlsx' },
+        sheet: { type: 'string', description: '可选：工作表名，默认取第一张表' },
+        resourceType: { type: 'string', enum: ['material', 'tool'], description: '导入目标：material=耗材（默认），tool=工具' },
+        dryRun: { type: 'boolean', description: '为 true 时只解析预览、不写库（默认 true，安全）；设为 false 才发起写入确认' }
+      },
+      required: ['filePath']
     }
   }
 ]
@@ -350,6 +462,28 @@ async function handleToolCall(id, params) {
     out = await doWrite(action, args.params || {})
   }
   else if (name === 'lab_confirm') out = await doConfirm(args.id, args.sessionId)
+  else if (name === 'lab_import') {
+    const fp = (args.filePath || '').trim()
+    if (!fp) return send({ jsonrpc: '2.0', id, error: { code: -32602, message: 'lab_import 需要 filePath 参数（本地 Excel 绝对路径）' } })
+    const rt = args.resourceType === 'tool' ? 'tool' : 'material'
+    const parsed = parseDeviceListFile(fp, args.sheet, rt)
+    if (!parsed.ok) return send({ jsonrpc: '2.0', id, error: { code: -32000, message: '清单解析失败：' + (parsed.errors || []).join('；') } })
+    const rtName = rt === 'tool' ? '工具(tools)' : '耗材(materials)'
+    let preview = '【' + rtName + '】解析成功：共 ' + parsed.rows.length + ' 条有效行（工作表[' + parsed.sheet + ']）。'
+    if (parsed.unmapped.length) preview += '\n⚠ 未识别列（已忽略）：' + parsed.unmapped.join('、')
+    preview += '\n前 5 条预览：\n' + parsed.rows.slice(0, 5).map((r, i) => {
+      if (rt === 'tool') {
+        return '  ' + (i + 1) + '. ' + (r.id || '新') + ' ' + r.name + ' / ' + (r.spec || '-') + ' / ' + (r.status || '正常') + ' / 保管:' + (r.holder || '-')
+      }
+      return '  ' + (i + 1) + '. ' + (r.id || '新') + ' ' + r.name + ' / ' + (r.spec || '-') + ' / 库存' + (r.stock || '0') + ' ' + (r.unit || '')
+    }).join('\n')
+    const dryRun = args.dryRun !== false  // 默认安全：仅预览
+    if (dryRun) {
+      return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: preview + '\n\n（仅预览，未写入。确认无误后再次调用 lab_import 并设 dryRun:false 发起写入确认。）' }] } })
+    }
+    // 正式写入：经 L1 二次确认门（先返回确认码，lab_confirm 执行）
+    out = await doWrite(rt === 'tool' ? 'importTools' : 'importMaterials', { rows: parsed.rows })
+  }
   else if (name === 'lab_context') {
     const s = getSession(args.sessionId)
     return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: summarizeContext(s) }] } })
@@ -411,4 +545,9 @@ function main() {
   log('lab-docs-proxy MCP server started (read-only batch).')
 }
 
-main()
+// 仅当以 `node docs-proxy-server.js` 直接运行时启动 MCP 循环；
+// 被 require 时（如单元测试）不自动启动，便于直接调用内部函数。
+if (require.main === module) main()
+
+module.exports = { parseDeviceListFile, _matchField: typeof _matchField !== 'undefined' ? _matchField : null }
+

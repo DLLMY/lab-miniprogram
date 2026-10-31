@@ -1,12 +1,12 @@
 // utils/mock.js
-// 本地演示数据（结构对齐腾讯文档 8 张表）。
-// 仅作为「云函数不可用时」的回退，保证导入即跑。生产由云函数 docsProxy 读写腾讯文档。
+// 本地演示数据（结构对齐生产 8 张表：腾讯文档或微信云数据库）。
+// 仅作为「云函数不可用时」的回退，保证导入即跑。生产由云函数 docsProxy 读写真实后端（腾讯文档或微信云数据库）。
 
 function clone(o) { return JSON.parse(JSON.stringify(o)) }
 
 const seed = {
   // 演示账号已清空：上线前不应随包分发真实工号+姓名组合（原 T001 邓老师 / A001 王管理员 等
-  // 与真实 users 表同名同号，存在凭证泄露风险）。生产走真实腾讯文档 users 表；纯 mock 模式下
+  // 与真实 users 表同名同号，存在凭证泄露风险）。生产走真实后端 users 表；纯 mock 模式下
   // 登录将无可用账号（仅开发回退用，可接受）。如需本地演示，请用 tools/add-users.js 录入临时账号。
   users: [],
   materials: [
@@ -394,7 +394,7 @@ function dispatch(action, data) {
     // 云端自检：如实报告本地演示，避免把「没连上云函数」误显示成「云端是旧版代码」
     case 'diag': return ok({
       useMock: true, hasCredential: false, rawUseMock: '(未连接云函数，走本地演示数据)',
-      ping: 'skipped(前端本地mock，未尝试连腾讯文档)'
+      ping: 'skipped(前端本地mock，未尝试连云端)'
     })
     // 登录绑定：mock 无 openid 概念，仅校验姓名+工号是否命中本地 users 表
     // whoami（openid→身份）：本地 mock 没有 openid 概念，与云侧 mockHandler 语义一致——
@@ -434,6 +434,73 @@ function dispatch(action, data) {
       DB.logs.push({ time: now(), actor: data.actor, op: '新增耗材', target: newId, result: '建档成功' })
       persist()
       return ok({ id: newId, name, stock: qty, unit: data.unit || '个' })
+    }
+    case 'importMaterials': {
+      const rows = Array.isArray(data.rows) ? data.rows : []
+      if (!rows.length) return { code: 400, data: { msg: '清单为空（rows 为空）' } }
+      const byId = new Map(), byName = new Map()
+      DB.materials.forEach(x => { byId.set('' + x.id, x); byName.set(('' + x.name).trim(), x) })
+      let max = 0
+      DB.materials.forEach(x => { const m = /^\s*[Mm](\d+)\s*$/.exec('' + x.id); if (m) max = Math.max(max, parseInt(m[1], 10) || 0) })
+      const created = [], updated = [], skipped = []
+      for (let i = 0; i < rows.length; i++) {
+        const raw = rows[i] || {}
+        const name = ('' + (raw.name || '')).trim()
+        if (!name) { skipped.push({ idx: i + 1, reason: '缺名称，跳过' }); continue }
+        const id = ('' + (raw.id || '')).trim()
+        const spec = ('' + (raw.spec || '')).trim()
+        const cat = ('' + (raw.cat || '')).trim() || '电子元件'
+        const loc = ('' + (raw.loc || '')).trim()
+        const unit = ('' + (raw.unit || '')).trim() || '个'
+        const safe = Number(raw.safe) || 0
+        const setStock = ('' + (raw.stock ?? '')).trim() !== ''
+        const stockNum = setStock ? (Number(raw.stock) || 0) : 0
+        const existing = (id && byId.get(id)) || byName.get(name)
+        if (existing) {
+          existing.spec = spec; existing.cat = cat; existing.loc = loc; existing.unit = unit; existing.safe = safe
+          if (setStock) existing.stock = stockNum
+          updated.push({ id: existing.id, name })
+        } else {
+          max += 1
+          const newId = id || ('M' + String(max).padStart(3, '0'))
+          DB.materials.push({ id: newId, name, spec, cat, loc, stock: stockNum, unit, safe, status: '正常' })
+          if (stockNum > 0) DB.stock_io.push({ no: ioNo(), matId: newId, type: 'in', qty: stockNum, operator: data.actor, time: now(), note: '清单导入·建档入库', src: '清单导入' })
+          created.push({ id: newId, name, stock: stockNum })
+        }
+      }
+      persist()
+      return ok({ created: created.length, updated: updated.length, skipped: skipped.length })
+    }
+    case 'importTools': {
+      const rows = Array.isArray(data.rows) ? data.rows : []
+      if (!rows.length) return { code: 400, data: { msg: '清单为空（rows 为空）' } }
+      const byId = new Map(), byName = new Map()
+      DB.tools.forEach(x => { byId.set('' + x.id, x); byName.set(('' + x.name).trim(), x) })
+      let max = 0
+      DB.tools.forEach(x => { const m = /^\s*[Tt](\d+)\s*$/.exec('' + x.id); if (m) max = Math.max(max, parseInt(m[1], 10) || 0) })
+      const created = [], updated = [], skipped = []
+      for (let i = 0; i < rows.length; i++) {
+        const raw = rows[i] || {}
+        const name = ('' + (raw.name || '')).trim()
+        if (!name) { skipped.push({ idx: i + 1, reason: '缺名称，跳过' }); continue }
+        const id = ('' + (raw.id || '')).trim()
+        const spec = ('' + (raw.spec || '')).trim()
+        const loc = ('' + (raw.loc || '')).trim()
+        const status = ('' + (raw.status || '')).trim() || '正常'
+        const holder = ('' + (raw.holder || '')).trim()
+        const existing = (id && byId.get(id)) || byName.get(name)
+        if (existing) {
+          existing.spec = spec; existing.loc = loc; existing.status = status; existing.holder = holder
+          updated.push({ id: existing.id, name })
+        } else {
+          max += 1
+          const newId = id || ('T' + String(max).padStart(3, '0'))
+          DB.tools.push({ id: newId, name, spec, loc, status, holder })
+          created.push({ id: newId, name })
+        }
+      }
+      persist()
+      return ok({ created: created.length, updated: updated.length, skipped: skipped.length })
     }
     case 'access': {
       const who = data.user || data.actor || ''

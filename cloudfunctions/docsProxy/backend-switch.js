@@ -5,7 +5,7 @@
 // 缺失（如 clouddb.js 尚未创建）或加载失败时返回 null，保证上层 index.js 不崩溃。
 //
 // 三个后端：
-//   tencent  —— 腾讯文档（云文档），tencentdocs.js（当前生产默认）
+//   tencent  —— 腾讯文档（云文档），tencentdocs.js（代码默认回退；生产推荐 DATA_BACKEND=cloud 走云库）
 //   cloud    —— 微信云数据库（云函数内 clouddb.js），免 token 永久运维（迁移方案 C）
 //   mock     —— 云函数内内存演示数据（mockHandler）
 //

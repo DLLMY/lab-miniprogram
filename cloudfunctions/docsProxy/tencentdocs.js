@@ -1434,6 +1434,141 @@ async function addMaterial(data) {
   }))
 }
 
+// 批量导入耗材清单（设备清单 → materials 集合）：建或更新。
+// 与 clouddb.importMaterials 行为完全同构（build 双后端一致性要求）。
+async function importMaterials(data) {
+  const rows = Array.isArray(data.rows) ? data.rows : []
+  if (!rows.length) return { code: 400, data: { msg: '清单为空（rows 为空）' } }
+  const actor = data.actor || ''
+  const all = await getRecords('materials')
+  let max = 0
+  const byId = new Map(), byName = new Map()
+  for (const r of all) {
+    const f = r.fields
+    const id = '' + (f[COL.materials.id] || '')
+    const name = ('' + (f[COL.materials.name] || '')).trim()
+    const m = /^\s*[Mm](\d+)\s*$/.exec(id)
+    if (m) max = Math.max(max, parseInt(m[1], 10) || 0)
+    if (id) byId.set(id, r)
+    if (name) byName.set(name, r)
+  }
+  const created = [], updated = [], skipped = []
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i] || {}
+    const name = ('' + (raw.name || '')).trim()
+    if (!name) { skipped.push({ idx: i + 1, reason: '缺名称，跳过' }); continue }
+    const id = ('' + (raw.id || '')).trim()
+    const spec = ('' + (raw.spec || '')).trim()
+    const cat = ('' + (raw.cat || '')).trim() || '电子元件'
+    const loc = ('' + (raw.loc || '')).trim()
+    const unit = ('' + (raw.unit || '')).trim() || '个'
+    const safe = Number(raw.safe) || 0
+    const setStock = ('' + (raw.stock ?? '')).trim() !== ''
+    const stockNum = setStock ? (Number(raw.stock) || 0) : 0
+    const existing = (id && byId.get(id)) || byName.get(name)
+    if (existing) {
+      const f = existing.fields
+      const oldStock = Number(f[COL.materials.stock]) || 0
+      const patch = {
+        [COL.materials.spec]: spec, [COL.materials.cat]: cat, [COL.materials.loc]: loc,
+        [COL.materials.unit]: unit, [COL.materials.safe]: safe
+      }
+      if (setStock) patch[COL.materials.stock] = stockNum
+      await updateRecord('materials', existing.recordId, patch)
+      if (setStock && stockNum !== oldStock) {
+        const diff = stockNum - oldStock
+        await addRecord('stock_io', {
+          [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: f[COL.materials.id],
+          [COL.stock_io.dir]: diff > 0 ? (TR.ioFwd.in || '入库') : (TR.ioFwd.out || '出库'),
+          [COL.stock_io.qty]: Math.abs(diff), [COL.stock_io.op]: actor,
+          [COL.stock_io.time]: now(), [COL.stock_io.note]: '清单导入·期初校准', [COL.stock_io.src]: '清单导入'
+        })
+      }
+      updated.push({ id: f[COL.materials.id], name })
+    } else {
+      max += 1
+      const newId = id || ('M' + String(max).padStart(3, '0'))
+      await addRecord('materials', {
+        [COL.materials.id]: newId, [COL.materials.name]: name, [COL.materials.spec]: spec,
+        [COL.materials.cat]: cat, [COL.materials.loc]: loc, [COL.materials.stock]: stockNum,
+        [COL.materials.unit]: unit, [COL.materials.safe]: safe, [COL.materials.status]: '正常'
+      })
+      if (stockNum > 0) {
+        await addRecord('stock_io', {
+          [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: newId,
+          [COL.stock_io.dir]: TR.ioFwd.in || '入库', [COL.stock_io.qty]: stockNum,
+          [COL.stock_io.op]: actor, [COL.stock_io.time]: now(),
+          [COL.stock_io.note]: '清单导入·建档入库', [COL.stock_io.src]: '清单导入'
+        })
+        await addRecord('logs', {
+          [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: actor,
+          [COL.logs.op]: '清单导入耗材', [COL.logs.target]: newId, [COL.logs.result]: '建档成功'
+        })
+      }
+      created.push({ id: newId, name, stock: stockNum })
+    }
+  }
+  return { created: created.length, updated: updated.length, skipped: skipped.length }
+}
+
+// 工具批量导入：与 importMaterials 同构。工具无库存概念（不写 stock_io），
+// 按 id（→Txxx）→ name 匹配；命中则更新描述字段并记日志，未命中则新建（自动 Txxx 编号）。
+async function importTools(data) {
+  const rows = Array.isArray(data.rows) ? data.rows : []
+  if (!rows.length) return { code: 400, data: { msg: '清单为空（rows 为空）' } }
+  const actor = data.actor || ''
+  const all = await getRecords('tools')
+  let max = 0
+  const byId = new Map(), byName = new Map()
+  for (const r of all) {
+    const f = r.fields
+    const id = '' + (f[COL.tools.id] || '')
+    const name = ('' + (f[COL.tools.name] || '')).trim()
+    const m = /^\s*[Tt](\d+)\s*$/.exec(id)
+    if (m) max = Math.max(max, parseInt(m[1], 10) || 0)
+    if (id) byId.set(id, r)
+    if (name) byName.set(name, r)
+  }
+  const created = [], updated = [], skipped = []
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i] || {}
+    const name = ('' + (raw.name || '')).trim()
+    if (!name) { skipped.push({ idx: i + 1, reason: '缺名称，跳过' }); continue }
+    const id = ('' + (raw.id || '')).trim()
+    const spec = ('' + (raw.spec || '')).trim()
+    const loc = ('' + (raw.loc || '')).trim()
+    const status = ('' + (raw.status || '')).trim() || '正常'
+    const holder = ('' + (raw.holder || '')).trim()
+    const existing = (id && byId.get(id)) || byName.get(name)
+    if (existing) {
+      const f = existing.fields
+      const patch = {
+        [COL.tools.spec]: spec, [COL.tools.loc]: loc,
+        [COL.tools.status]: status, [COL.tools.holder]: holder
+      }
+      await updateRecord('tools', existing.recordId, patch)
+      await addRecord('logs', {
+        [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: actor,
+        [COL.logs.op]: '清单导入工具', [COL.logs.target]: f[COL.tools.id], [COL.logs.result]: '更新成功'
+      })
+      updated.push({ id: f[COL.tools.id], name })
+    } else {
+      max += 1
+      const newId = id || ('T' + String(max).padStart(3, '0'))
+      await addRecord('tools', {
+        [COL.tools.id]: newId, [COL.tools.name]: name, [COL.tools.spec]: spec,
+        [COL.tools.loc]: loc, [COL.tools.status]: status, [COL.tools.holder]: holder
+      })
+      await addRecord('logs', {
+        [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: actor,
+        [COL.logs.op]: '清单导入工具', [COL.logs.target]: newId, [COL.logs.result]: '建档成功'
+      })
+      created.push({ id: newId, name })
+    }
+  }
+  return { created: created.length, updated: updated.length, skipped: skipped.length }
+}
+
 // 出入库登记：入库 + / 出库 -，更新库存 + 写 stock_io + logs
 // 入库时若物品不存在，且带了 newItem 信息，则先建档再入库（老师无需先去文档手动加行）
 async function io(data) {
@@ -2509,7 +2644,7 @@ module.exports = {
   findUser, listUsers, ensureOpenIdColumn, bindOpenId, findUserByOpenId, findUserByRobotKey, setRobotKey, whoami, bindLogin,
   adminListUsers, adminUpsertUser, adminDeleteUser, decideUserWrite, decideUserDelete,
   requisition, toolRequisition, approve, cancelReq, io, borrow, returnTool, access, usage, snapshot,
-  addMaterial, listStockIO, exportData, stocktake, listLogs, reverseIO, batchIo, listAccess,
+  addMaterial, listStockIO, exportData, stocktake, listLogs, reverseIO, batchIo, listAccess, importMaterials, importTools,
   // 实训室归属管理体系（labs / repairs / inspections）
   listLabs, getLab, addLab, updateLab, deleteLab,
   listRepairs, addRepair, updateRepair,

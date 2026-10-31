@@ -109,11 +109,21 @@
       </view>
     </view>
 
-    <!-- 数据迁移（仅超级管理员）：腾讯文档 8 表 → 云数据库。详见迁移方案文档 -->
+    <!-- 数据迁移（仅超级管理员）：按当前后端动态展示，避免已迁云库后还提示「从腾讯文档导入」 -->
     <view wx:if="{{isSuper}}" class="card card-accent">
-      <view class="title">数据迁移 · 腾讯文档 → 云数据库</view>
-      <view class="sub">一次性操作：将腾讯文档 8 表全量导入云数据库（幂等、可重跑）。执行前请确认 8 个集合已建、权限为「所有用户不可读写」，且腾讯文档 access_token 未过期。</view>
-      <button class="btn btn-primary btn-block mt-m" bindtap="runMigrate">执行数据迁移</button>
+      <block wx:if="{{migrateBackend === 'tencent'}}">
+        <view class="title">数据迁移 · 腾讯文档 → 云数据库</view>
+        <view class="sub">一次性操作：将腾讯文档 8 表全量导入云数据库（幂等、可重跑）。执行前请确认 8 个集合已建、权限为「所有用户不可读写」，且腾讯文档 access_token 未过期。</view>
+        <button class="btn btn-primary btn-block mt-m" bindtap="runMigrate">执行数据迁移</button>
+      </block>
+      <block wx:elif="{{migrateBackend === 'cloud'}}">
+        <view class="title">数据已位于云数据库</view>
+        <view class="sub">当前后端为微信云数据库，迁移已完成，无需重复执行「腾讯文档 → 云数据库」。如需从腾讯文档补录历史数据，请先将云函数 DATA_BACKEND 切回 tencent 再迁移。</view>
+      </block>
+      <block wx:else>
+        <view class="title">数据迁移不可用</view>
+        <view class="sub">当前为演示/未连接后端（{{migrateBackend || '未知'}}），无法执行迁移。请先在云函数配置腾讯文档凭证并设 DATA_BACKEND=tencent 后重试。</view>
+      </block>
     </view>
 
     <!-- 盘点 / 期初（教职工） -->

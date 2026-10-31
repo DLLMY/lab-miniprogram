@@ -4,13 +4,13 @@ const identity = require('../../utils/identity.js')
 const mock = require('../../utils/mock.js')
 
 Page({
-  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isSuper: false, isDemo: false, showReset: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false,
+  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isSuper: false, isDemo: false, showReset: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false, migrateBackend: '',
     // 个人机器人密钥（WorkBuddy 自然语言操作自服务）
     robotKey: '', robotKeyShown: false, hasRobotKey: false, robotBusy: false },
 
-  // 云端自检：直接问云函数「你现在跑的是 mock 还是真腾讯文档」，并把结果摊在页面上
+  // 云端自检：直接问云函数「你现在跑的是 mock 还是真后端（腾讯文档/云数据库）」，并把结果摊在页面上
   async runDiag() {
-    // 云端自检需要已绑定身份（服务端 diag 只对已登录用户开放，避免匿名反复调用打腾讯文档配额）。
+    // 云端自检需要已绑定身份（服务端 diag 只对已登录用户开放，避免匿名反复调用打后端配额）。
     // 未登录时直接说明，不去打扰云端，也不误报「云函数是旧版代码」。
     if (!identity.current()) {
       this.setData({ diag: null, diagText: '请先登录后再自检', diagOk: false })
@@ -29,7 +29,7 @@ Page({
     if (dg.useMock) {
       t = dg.hasCredential
         ? '凭证齐全，但 USE_MOCK 被显式设成了 ' + dg.rawUseMock + '，改回 false 即可'
-        : '云端跑的是内存 mock（USE_MOCK=' + dg.rawUseMock + '，凭证不全），数据不落腾讯文档'
+        : '云端跑的是内存 mock（USE_MOCK=' + dg.rawUseMock + '，凭证不全），数据不落真实后端'
     } else if (dg.ping === 'ok') {
       t = '主后端=' + bk + '（' + bkName + '），自检通过，耗材读到 ' + dg.materialCount + ' 条'
       ok = true
@@ -66,15 +66,21 @@ Page({
     })
     await this.runDiag()
     const d = await api.call('listMine', { user: (i && i.id) || '' })
-    const src = app && app.globalData ? app.globalData.dataSource : ''
-    const srcText = src === 'cloud' ? '真实腾讯文档' : (src === 'mock' ? '本地演示数据（云函数未生效）' : '未知')
-    // 「重置演示数据」仅在演示（非真实腾讯文档）时可见：走真实库后点了也只清本地 mock，会误导
+    const be = (app && app.globalData && app.globalData.dataBackend) ||
+      (app && app.globalData && app.globalData.dataSource) || ''
+    const srcText = api.backendLabel(be) || '未知'
+    // 迁移卡片按当前后端决定是否展示「从腾讯文档迁入」操作：
+    // 已切到云数据库 → 显示「已迁移」状态（不再提示从腾讯文档导入）；
+    // 仍为腾讯文档 → 显示可执行的迁移入口；演示模式 → 提示不可用。
+    const migrateBackend = (this.data.diag && this.data.diag.backend) || be || ''
+    // 「重置演示数据」仅在本地演示（mock，数据只在本机）时可见：走真实后端后点了也只清本地 mock，会误导
     this.setData({
       rs: (d && d.requisitions) || [],
       bs: (d && d.borrow) || [],
       srcText,
-      srcOk: src === 'cloud',
-      showReset: this.data.isDemo && srcText !== '真实腾讯文档'
+      srcOk: be === 'cloud' || be === 'tencent',
+      showReset: be === 'mock',
+      migrateBackend
     })
     await this.loadRobotStatus()
   },

@@ -1,6 +1,6 @@
 // utils/export.js —— CSV 导出（前端部分）
 //
-// 云函数侧已把数据拼成 CSV 文本（tencentdocs.js exportData），这里负责在小程序里交付给用户。
+// 云函数侧已把数据拼成 CSV 文本（docsProxy 的 exportData，腾讯文档/云数据库同构），这里负责在小程序里交付给用户。
 // 小程序不能直接"下载到手机相册/文件管理"，实际可交付的三条路：
 //   1) 复制到剪贴板 —— 粘贴进 Excel/WPS 即用，最省事、成功率最高（默认走这条）
 //   2) 写入本地临时文件后转发给微信好友/文件传输助手（wx.shareFileMessage）
@@ -18,7 +18,7 @@ async function fetchCsv(kind) {
   const d = r.data || {}
   if (!d.csv) throw new Error('导出失败：返回内容为空')
   // 数据来源判定：云函数已部署但仍是 USE_MOCK（src='mock'）时，云端会正常返回 code=0，
-  // 导出内容是演示台账而非真实腾讯文档数据。这种情况必须随交付一起告知——
+  // 导出内容是演示台账而非真实云端数据。这种情况必须随交付一起告知——
   // 用户要把 CSV 粘进 Excel 交给教务核对，弹一句「导出成功」是不够的。
   const demo = (r.src === 'mock') || api.isDemoData()
   return { filename: d.filename || (kind + '.csv'), csv: d.csv, count: d.count || 0, demo }
@@ -53,7 +53,7 @@ async function run(kind, viaShare, title) {
     // 演示数据必须在成功弹窗里显式标注：CSV 一旦粘进 Excel 交给教务核对，
     // 用户就没有机会再分辨它是演示台账还是真实台账了。
     const demoTip = r.demo
-      ? '【演示模式】本次导出来自演示数据，不是真实腾讯文档台账，请勿直接用于上报核对。\n\n'
+      ? '【演示模式】本次导出来自演示数据，不是真实云端台账，请勿直接用于上报核对。\n\n'
       : ''
     wx.showModal({
       title: (r.demo ? '导出成功（演示数据 ' : '导出成功（') + r.count + ' 条）',

@@ -34,7 +34,8 @@ Page({
       api.call('listTools', {})
     ])
     const app = getApp()
-    const src = app && app.globalData ? app.globalData.dataSource : ''
+    const src = (app && app.globalData && app.globalData.dataBackend) ||
+      (app && app.globalData && app.globalData.dataSource) || ''
     const m = mats || []
     const t = tools || []
     // 预计算库存水位百分比、是否低于安全线与预警数，避免在 WXML 里做数值运算
@@ -47,7 +48,7 @@ Page({
       mats: mats2,
       tools: t,
       lowCount: mats2.filter(x => (Number(x.stock) || 0) < (Number(x.safe) || 0)).length,
-      srcText: src === 'cloud' ? '真实腾讯文档' : (src === 'mock' ? '本地演示数据' : '未知')
+      srcText: api.backendLabel(src)
     })
     this.filter()
   },
