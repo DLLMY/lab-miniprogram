@@ -1,0 +1,13 @@
+{
+  "name": "lab-docs-proxy-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "实训室管理系统 · WorkBuddy 自然语言操作 MCP 连接器（支持 HTTP 触发 / CloudBase SDK 直连两种传输）",
+  "main": "docs-proxy-server.js",
+  "scripts": {
+    "start": "node docs-proxy-server.js"
+  },
+  "dependencies": {
+    "@cloudbase/node-sdk": "^2.8.0"
+  }
+}

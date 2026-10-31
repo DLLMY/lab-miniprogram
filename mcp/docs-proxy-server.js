@@ -18,19 +18,29 @@
 //       记录最近查询解析出的锚点实体（实训室/物料/报修单号），供 LLM 消解模糊追问。
 //       语音输入直接复用 WorkBuddy 自带语音能力，无需改后端。
 //
-// 传输：通过 CloudBase HTTP 触发地址 POST JSON。云函数 index.js 已兼容
-//       event.body 为 JSON 字符串（H5 页同一条路）。
+// 传输（两种，自动择优）：
+//   ① HTTP 触发：DOCS_PROXY_HTTP_URL 指向 CloudBase HTTP 访问服务地址，POST JSON。
+//   ② SDK 直连：配置 TCB_SECRET_ID/TCB_SECRET_KEY/TCB_ENV，用 @cloudbase/node-sdk
+//      callFunction 直接调云函数，无需公网 HTTP 入口、无需升级付费环境（更安全）。
+//   本机未配 SDK 凭据时回退 HTTP；两者皆缺则报错提示。两条路云函数端零改动。
 //
-// 依赖：Node 内置 http/https，无第三方依赖，任意 Node ≥ 16 可直接跑。
+// 依赖：SDK 模式需安装 @cloudbase/node-sdk（npm install）；HTTP 模式仅用 Node 内置模块。
 // 注意：stdout 只输出合法 JSON-RPC 消息；调试信息一律写 stderr。
 // ============================================================================
 
 const http = require('http')
 const https = require('https')
 const { URL } = require('url')
+const fs = require('fs')
 
 const HTTP_URL = (process.env.DOCS_PROXY_HTTP_URL || '').trim()
 const ROBOT_KEY = (process.env.DOCS_PROXY_ROBOT_KEY || '').trim()
+// 方案 B：CloudBase Node SDK 直连（无需公网 HTTP 入口、无需升级付费环境）
+const TCB_SECRET_ID = (process.env.TCB_SECRET_ID || '').trim()
+const TCB_SECRET_KEY = (process.env.TCB_SECRET_KEY || '').trim()
+const TCB_ENV = (process.env.TCB_ENV || '').trim()
+// 显式覆盖传输方式（用于测试或强制）：http | sdk | stub
+const TRANSPORT = (process.env.LAB_MCP_TRANSPORT || '').trim().toLowerCase()
 
 // 只读查询白名单（fail-closed，未列出的 action 一律拒绝）。
 const READ_ACTIONS = [
@@ -167,22 +177,70 @@ function postJson(url, bodyObj) {
   })
 }
 
-async function doCall(action, params, confirmToken) {
-  if (!HTTP_URL) return { error: '未配置 DOCS_PROXY_HTTP_URL：请在环境变量设置 docsProxy 的 CloudBase HTTP 触发地址。' }
-  if (!ROBOT_KEY) return { error: '未配置 DOCS_PROXY_ROBOT_KEY：需与用户个人机器人密钥一致。' }
+// —— 统一调用层：把一次 docsProxy 调用归一为 {code,data,...} 信封（或 {error}）——
+// 支持三种传输：stub（测试）/ sdk（CloudBase Node SDK 直连，无需公网）/ http（HTTP 触发）。
+async function invokeHttp(payload) {
+  if (!HTTP_URL) return { error: '未配置 DOCS_PROXY_HTTP_URL（HTTP 触发地址）。' }
   try {
-    const payload = Object.assign({}, (params || {}), { action, robotKey: ROBOT_KEY })
-    if (confirmToken) payload.__confirm = confirmToken
     const resp = await postJson(HTTP_URL, payload)
-    const body = resp.body || {}
-    if (body.code === 0) {
-      const text = (typeof body.data === 'string') ? body.data : JSON.stringify(body.data, null, 2)
-      return { text }
-    }
-    return { error: '操作返回非零状态 code=' + body.code + '：' + JSON.stringify(body.data || {}) }
-  } catch (e) {
-    return { error: e.message }
+    return resp.body || {}
+  } catch (e) { return { error: e.message } }
+}
+
+let _tcbApp = null
+function getTcbApp() {
+  if (_tcbApp) return _tcbApp
+  let init
+  try { init = require('@cloudbase/node-sdk') }
+  catch (e) { throw new Error('未安装 @cloudbase/node-sdk：请在 mcp/ 目录执行 `npm install @cloudbase/node-sdk` 后再用 SDK 直连模式。') }
+  _tcbApp = init({ secretId: TCB_SECRET_ID, secretKey: TCB_SECRET_KEY, env: TCB_ENV })
+  return _tcbApp
+}
+async function invokeSdk(payload) {
+  if (!TCB_SECRET_ID || !TCB_SECRET_KEY || !TCB_ENV) {
+    return { error: 'SDK 直连缺少必要配置：TCB_SECRET_ID / TCB_SECRET_KEY / TCB_ENV 三项需同时设置。' }
   }
+  try {
+    const app = getTcbApp()
+    const res = await app.callFunction({ name: 'docsProxy', data: payload })
+    // SDK 返回 { result, requestId }，result 即云函数 main 的返回值（{code,data,...} 信封）
+    if (res && Object.prototype.hasOwnProperty.call(res, 'result')) {
+      return (res.result && typeof res.result === 'object') ? res.result : { code: 0, data: res.result }
+    }
+    if (res && res.code) return { error: 'TCB 调用失败 code=' + res.code + ' ' + (res.message || JSON.stringify(res)) }
+    return { error: 'TCB 返回结构异常：' + JSON.stringify(res).slice(0, 200) }
+  } catch (e) { return { error: 'TCB SDK 调用异常：' + e.message } }
+}
+
+async function invokeProxy(payload) {
+  if (TRANSPORT === 'stub') {
+    let raw = process.env.LAB_MCP_STUB
+    if (process.env.LAB_MCP_STUB_FILE) {
+      try { raw = fs.readFileSync(process.env.LAB_MCP_STUB_FILE, 'utf8') } catch (e) { return { error: 'stub 文件读取失败: ' + e.message } }
+    }
+    if (!raw) return { code: 0, data: 'stub ok' }
+    try { return JSON.parse(raw) } catch (e) { return { error: 'stub JSON 解析失败：' + e.message } }
+  }
+  if (TRANSPORT === 'sdk' || (!TRANSPORT && TCB_SECRET_ID && TCB_SECRET_KEY && TCB_ENV)) {
+    return invokeSdk(payload)
+  }
+  if (TRANSPORT === 'http' || (!TRANSPORT && HTTP_URL)) {
+    return invokeHttp(payload)
+  }
+  return { error: '未配置传输方式：请设置 TCB_SECRET_ID/TCB_SECRET_KEY/TCB_ENV（SDK 直连，无需公网）或 DOCS_PROXY_HTTP_URL（HTTP 触发）。' }
+}
+
+async function doCall(action, params, confirmToken) {
+  if (!ROBOT_KEY) return { error: '未配置 DOCS_PROXY_ROBOT_KEY：需与用户个人机器人密钥一致。' }
+  const payload = Object.assign({}, (params || {}), { action, robotKey: ROBOT_KEY })
+  if (confirmToken) payload.__confirm = confirmToken
+  const body = await invokeProxy(payload)
+  if (body.error) return body
+  if (body.code === 0) {
+    const text = (typeof body.data === 'string') ? body.data : JSON.stringify(body.data, null, 2)
+    return { text }
+  }
+  return { error: '操作返回非零状态 code=' + body.code + '：' + JSON.stringify(body.data || {}) }
 }
 
 // 写操作确认门（L1）：后端首次返回 {confirm:true, token, summary} 时不执行，
@@ -209,11 +267,9 @@ async function doWrite(action, params) {
 
 // 读取云函数原始返回（用于判断 confirm 态）
 async function doCallRaw(action, params) {
-  if (!HTTP_URL || !ROBOT_KEY) return null
-  try {
-    const resp = await postJson(HTTP_URL, Object.assign({}, (params || {}), { action, robotKey: ROBOT_KEY }))
-    return resp.body || {}
-  } catch (e) { return null }
+  if (!ROBOT_KEY) return null
+  const r = await invokeProxy(Object.assign({}, (params || {}), { action, robotKey: ROBOT_KEY }))
+  return r.error ? null : r
 }
 
 async function doConfirm(idArg, sessionId) {
@@ -335,9 +391,11 @@ function handleLine(line) {
 }
 
 function main() {
-  if (!HTTP_URL || !ROBOT_KEY) {
-    log('警告: DOCS_PROXY_HTTP_URL / DOCS_PROXY_ROBOT_KEY 未设置，工具调用将返回错误提示（不影响 MCP 握手）。')
+  if (!ROBOT_KEY) {
+    log('警告: DOCS_PROXY_ROBOT_KEY 未设置，所有工具调用将返回错误提示（不影响 MCP 握手）。')
   }
+  const mode = TRANSPORT || (TCB_SECRET_ID && TCB_SECRET_KEY && TCB_ENV ? 'sdk(自动择优)' : (HTTP_URL ? 'http(自动择优)' : '未配置'))
+  log('传输模式: ' + mode + (String(mode).indexOf('sdk') >= 0 ? '（@cloudbase/node-sdk 直连，无需公网 HTTP 入口）' : ''))
   let buf = ''
   process.stdin.setEncoding('utf8')
   process.stdin.on('data', (chunk) => {

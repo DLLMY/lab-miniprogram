@@ -21,7 +21,8 @@ const SUITES = [
   ['后端契约一致性（clouddb ↔ tencentdocs 导出键）', 'test-backend-parity.js'],
   ['数据迁移（腾讯文档→云库 中文列名→英文 key）', 'test-migrate.js'],
   ['WorkBuddy 连接器 L1 写确认门（真实子进程端到端）', 'test-robot-write.js'],
-  ['WorkBuddy 连接器 Phase4 多轮记忆编排', 'test-robot-memory.js']
+  ['WorkBuddy 连接器 Phase4 多轮记忆编排', 'test-robot-memory.js'],
+  ['WorkBuddy 连接器双传输层（HTTP / SDK 直连 stub 验证）', 'test-mcp-transports.js']
 ]
 
 const NODE = process.execPath

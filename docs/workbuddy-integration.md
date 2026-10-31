@@ -61,7 +61,8 @@ CloudBase 集合读取 → 返回 {code:0, data}
 1. **小程序生成个人密钥**：打开实训室小程序 →「我的」→「个人机器人密钥」→ 点「生成我的密钥」。
    系统生成一把**只属于你工号**的密钥，明文**仅显示这一次**，请立即复制保存。
 2. **本机装 WorkBuddy + Node**（≥16，建议 18+）。
-3. **配置连接器**：在本机 WorkBuddy 的 `mcp.json` 加入：
+3. **配置连接器**：在本机 WorkBuddy 的 `mcp.json` 加入。**推荐方案 B（SDK 直连，无需公网 HTTP 入口、无需升级付费环境）**：
+
    ```json
    {
      "mcpServers": {
@@ -69,16 +70,21 @@ CloudBase 集合读取 → 返回 {code:0, data}
          "command": "node",
          "args": ["D:/万州职教中心/lab-miniprogram/mcp/docs-proxy-server.js"],
          "env": {
-           "DOCS_PROXY_HTTP_URL": "https://xxx.apigw.tencentcs.com/release/labproxy",
+           "TCB_SECRET_ID": "你的腾讯云 SecretId",
+           "TCB_SECRET_KEY": "你的腾讯云 SecretKey",
+           "TCB_ENV": "cloud1-xxxxxxxx",
            "DOCS_PROXY_ROBOT_KEY": "<第 1 步生成的【个人密钥】>"
          }
        }
      }
    }
    ```
+
+   若走方案 A（HTTP 触发），把 `env` 换成 `{"DOCS_PROXY_HTTP_URL":"https://...","DOCS_PROXY_ROBOT_KEY":"<个人密钥>"}` 即可（需管理员先建好 HTTP 访问服务，见 `docs/控制台部署手册.md` 第 4 节）。
+
 4. **信任启用**：WorkBuddy 左侧连接器 → 找到 `lab-docs-proxy` → 点「信任」启用。重启对话/重连 MCP 后即可用自然语言操作。
 
-> 全校共用同一个 `DOCS_PROXY_HTTP_URL`（管理员给）；`DOCS_PROXY_ROBOT_KEY` 每位老师填**自己的**个人密钥。
+> 方案 B 下，`TCB_SECRET_ID/KEY/ENV` 三者填齐连接器即自动走 SDK 直连；`DOCS_PROXY_ROBOT_KEY` 每位老师填**自己的**个人密钥。管理员用全局超级钥匙 `ROBOT_KEY` 可获全校视角。
 
 ---
 
@@ -110,9 +116,9 @@ CloudBase 集合读取 → 返回 {code:0, data}
 - **身份选择**：
   - **全校视角的每日简报**：`mcp.json` 的 `DOCS_PROXY_ROBOT_KEY` 用管理员**全局超级钥匙**（`ROBOT_KEY` 环境变量值），可读取全部实训室数据。
   - **教师个人视角**：用该教师**个人密钥**，仅看自己权限范围内的预警。
-- 若连接器未配置/调用失败，自动化会明确提示检查 `DOCS_PROXY_HTTP_URL` / `DOCS_PROXY_ROBOT_KEY`。
+- 若连接器未配置/调用失败，自动化会明确提示检查 `TCB_SECRET_ID/KEY/ENV`（方案 B）或 `DOCS_PROXY_HTTP_URL` / `DOCS_PROXY_ROBOT_KEY`（方案 A）。
 
-> 该自动化已创建（workspace 作用域，cwds=`D:/万州职教中心`）。首次生效需确保本机 `mcp.json` 已填好真实 `HTTP_URL` 与个人/管理员密钥。
+> 该自动化已创建（workspace 作用域，cwds=`D:/万州职教中心`）。首次生效需确保本机 `mcp.json` 已填好 SDK 凭据（方案 B，推荐）或 HTTP_URL 与个人/管理员密钥。
 
 ## 四-C、远期路线（L3 / L4）
 
@@ -146,9 +152,10 @@ CloudBase 集合读取 → 返回 {code:0, data}
 | `index.js` | robot 通道由「全局工号」升级为「哈希反查教师身份」；新增 `genRobotKey / revokeRobotKey / robotKeyStatus` 动作（仅微信登录态可调用）；新增 L1 写操作确认门（令牌绑定动作+参数+身份）；`ROBOT_KEY` 保留为管理员应急超级通道；新增只读 `alerts` 动作（低库存+逾期巡检+待审批聚合，供每日推送）；修复 `usage` 趋势月份桶在月末日（如 31 号）因 `setUTCMonth` 跨 30 天月溢出导致**重复计月、趋势翻倍**的 bug（已对齐 `tencentdocs` 的 `setUTCDate(1)` 写法） |
 | `utils/mock.js` | 离线模式对三个密钥动作返回友好提示（离线不支持密钥管理）；新增 `alerts` 离线同构实现 |
 | `pages/mine/*` | 「我的」页新增「个人机器人密钥」卡片：生成/重置/吊销 + 明文仅显一次 + 复制 |
-| `mcp/docs-proxy-server.js` | 新增 `lab_write`（写白名单 + L1 确认）、`lab_confirm`（携令牌二次执行）；`READ_ACTIONS` 增加 `alerts` / `lab_context` / `lab_forget`；`WRITE_ACTIONS` 增加 `addMaterial` / `stocktake`；Phase 4 多轮会话记忆编排（锚点实体缓存，隐私红线） |
+| `mcp/docs-proxy-server.js` | 新增 `lab_write`（写白名单 + L1 确认）、`lab_confirm`（携令牌二次执行）；`READ_ACTIONS` 增加 `alerts` / `lab_context` / `lab_forget`；`WRITE_ACTIONS` 增加 `addMaterial` / `stocktake`；Phase 4 多轮会话记忆编排（锚点实体缓存，隐私红线）；**双传输层：HTTP 触发 + CloudBase Node SDK 直连（`TCB_SECRET_ID/KEY/ENV`，无需公网入口），自动择优** |
 | `tools/test-robot-write.js` | 新增：驱动真实连接器走完 L1 写确认全流程（13 个写动作首调仅确认、确认后写入；读操作直达；非白名单被拒；令牌篡改 403），30 断言 |
-| `~/.workbuddy/mcp.json` | MCP 服务注册（占位环境变量，待填 HTTP_URL + 个人密钥） |
+| `tools/test-mcp-transports.js` | 新增：stub 模式验证 SDK 直连回包形态处理、L1 确认门、白名单失败闭合、无传输友好报错、SDK 缺配置立即报错，7 断言 |
+| `~/.workbuddy/mcp.json` | MCP 服务注册（占位环境变量，待填 `TCB_SECRET_ID/KEY/ENV` 走 SDK 直连，或 HTTP_URL + 个人密钥） |
 
 ---
 
