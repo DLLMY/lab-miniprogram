@@ -2,16 +2,38 @@
 tools/.env.local
 cloudfunctions/docsProxy/env.local.js
 cloudfunctions/docsProxy/nul
+*.local
+
+# 微信开发者工具：个人偏好/上传私钥配置，禁止入库（公开仓库尤甚）
+project.private.config.json
+private.*.key
+*.pem
 
 # 依赖
 node_modules/
 cloudfunctions/*/node_modules/
+
+# 微信小程序 npm 构建产物（由工具链生成，非源码）
+miniprogram_npm/
+
+# 构建/打包产物
+dist/
+build/
+*.zip
+*.tar.gz
+
+# 日志
+*.log
+logs/
 
 # 系统/编辑器
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+# 项目级 agent/记忆数据（不在源码管理范围）
+.workbuddy/
 
 # 数据备份（内测期每日生成，不入库）
 backup/
