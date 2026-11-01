@@ -68,7 +68,6 @@ Page({
       isAdmin: identity.isAdmin(),
       roleText: i ? identity.roleText(i.role) : '未登录'
     })
-    console.log('[io] 身份=' + (i ? i.id + '/' + i.role : '未登录') + ' allow=' + allow)
     if (allow) { this.loadMats(); this.loadLogs(true) }
   },
   switchAccount() {

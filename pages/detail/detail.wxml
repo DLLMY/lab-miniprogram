@@ -70,7 +70,7 @@
         <view class="kv"><text class="kv-k">工具 ID</text><text class="kv-v">{{item.id}}</text></view>
         <view class="kv"><text class="kv-k">名称</text><text class="kv-v">{{item.name}}</text></view>
         <view class="kv"><text class="kv-k">出厂编号</text><text class="kv-v">{{item.sn}}</text></view>
-        <view class="kv"><text class="kv-k">当前状态</text><text class="kv-v"><text class="pill {{item.status==='在库'?'ok':item.status==='借出'?'blue':'red'}}">{{item.status}}</text></text></view>
+        <view class="kv"><text class="kv-k">当前状态</text><view class="kv-v"><view class="pill {{item.status==='在库'?'ok':item.status==='借出'?'blue':'red'}}">{{item.status}}</view></view></view>
       </view>
 
       <view wx:if="{{item.borrower}}" class="card card-accent">

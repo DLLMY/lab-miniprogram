@@ -18,7 +18,6 @@ Page({
     const i = identity.current()
     const allow = identity.isStaff()
     this.setData({ allow, me: i, roleText: i ? identity.roleText(i.role) : '未登录' })
-    console.log('[approve] 身份=' + (i ? i.id + '/' + i.role : '未登录') + ' allow=' + allow)
     if (allow) this.load()
   },
   switchAccount() {

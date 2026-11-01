@@ -5,7 +5,8 @@ const api = require('../../utils/api.js')
 const identity = require('../../utils/identity.js')
 
 const STATUSES = ['启用', '停用']
-const STAFF_ROLES = ['teacher']
+// 实训室负责人候选角色：教师 / 管理员 / 超级管理员（与 loadManagers 注释一致，排除学生）
+const STAFF_ROLES = ['teacher', 'admin', 'super']
 
 function cleanLab() {
   return {

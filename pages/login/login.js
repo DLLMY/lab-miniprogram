@@ -27,7 +27,6 @@ Page({
     try {
       const u = await api.call('whoami', {})
       if (u) {
-        console.log('[login] openid 自动登录 ' + u.id + ' · ' + u.role)
         identity.loginWithUser(u)
         wx.showToast({ title: '欢迎回来，' + u.name, icon: 'none' })
         setTimeout(() => wx.switchTab({ url: '/pages/index/index' }), 500)
