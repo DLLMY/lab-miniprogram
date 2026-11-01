@@ -66,6 +66,23 @@ function loadBackend(kind, requireFn) {
   return null
 }
 
+// —— 写操作集合（会变更数据的 action）——
+// 用途：回退分发时，写操作【禁止降级到非主后端】——
+//   • 跨后端写（cloud→tencent）会造成双库分裂；
+//   • 降级到 mock（云函数内内存态）则数据静默丢失（实例回收即蒸发），
+//     而前端用 callFull(noFallback) 只能挡住「前端→本地mock」，挡不住「云函数内部→内部mock」，
+//     于是用户看到 code:0「成功」而云端什么都没写。
+// 故：写操作只允许在 PRIMARY（i===0）执行，主后端失败即报错，绝不静默回退。
+const WRITE_ACTIONS = new Set([
+  'requisition', 'toolRequisition', 'cancelReq', 'io', 'batchIo', 'approve', 'addMaterial',
+  'stocktake', 'borrow', 'returnTool', 'access', 'reverseIO', 'bindLogin',
+  'genRobotKey', 'revokeRobotKey',
+  'addLab', 'updateLab', 'deleteLab', 'addRepair', 'updateRepair',
+  'addInspection', 'updateInspection', 'adminUpsertUser', 'adminDeleteUser',
+  'importMaterials', 'importTools'
+])
+function isWriteAction(a) { return WRITE_ACTIONS.has(a) }
+
 // 构建有序回退链
 function buildChain(env, requireFn) {
   const PRIMARY = resolvePrimary(env)
@@ -91,4 +108,4 @@ function buildChain(env, requireFn) {
   return { PRIMARY, chain, kinds: chain.map(b => b.kind) }
 }
 
-module.exports = { resolveEnv, resolvePrimary, loadBackend, buildChain }
+module.exports = { resolveEnv, resolvePrimary, loadBackend, buildChain, WRITE_ACTIONS, isWriteAction }

@@ -1109,9 +1109,16 @@ exports.main = async (event) => {
   }
 
   // ===== 冗余分发：按回退链依次尝试，任一后端抛异常即切下一个，避免程序崩溃 =====
+  // ⚠ 写操作禁止降级到非主后端（见 backend-switch.isWriteAction）：跨后端写会双库分裂，
+  // 降级到 mock 则数据静默丢失（实例回收即蒸发）。读操作可正常回退（仅显示陈旧/空数据，无写入风险）。
   let lastErr = null
   for (let i = 0; i < CHAIN.length; i++) {
     const bk = CHAIN[i]
+    if (bs.isWriteAction(action) && i > 0) {
+      console.error('[docsProxy] 写操作 ' + action + ' 在主后端失败，已拒绝回退到 ' + bk.kind
+        + '（避免脏写 / 数据丢失）；直接返回错误')
+      break
+    }
     try {
       const r = bk.kind === 'mock'
         ? mockHandler(action, data)
@@ -1131,6 +1138,6 @@ exports.main = async (event) => {
       if (i >= CHAIN.length - 1) break
     }
   }
-  // 所有后端均失败：返回结构化错误，进程不崩
-  return finish({ code: 500, data: { msg: (lastErr && lastErr.message) || '所有数据后端均不可用' }, src: 'mock', backend: 'none', fallback: true })
+  // 所有后端均失败（或写操作被禁止回退）：返回结构化错误，进程不崩
+  return finish({ code: 500, data: { msg: (lastErr && lastErr.message) || '数据后端暂不可用，写操作未执行（已避免脏写）' }, src: 'mock', backend: 'none', fallback: true })
 }
