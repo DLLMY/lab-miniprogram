@@ -1,55 +1,63 @@
 // utils/mock.js
 // 本地演示数据（结构对齐生产 8 张表：腾讯文档或微信云数据库）。
 // 仅作为「云函数不可用时」的回退，保证导入即跑。生产由云函数 docsProxy 读写真实后端（腾讯文档或微信云数据库）。
+//
+// 【数据域隔离说明 · 有意例外】
+// 小程序端无法 require 云函数目录的 data-scope.js，且本演示模式刻意不做服务端鉴权
+// （见下方 dispatch 注释）、seed 全表为空、不接触任何真实账号与业务流水，
+// 因此这里不实现班级行级隔离。真实数据路径（cloud / tencent 两套适配器 + prodHandler）
+// 已完整隔离，详见 cloudfunctions/docsProxy/data-scope.js 与 docs/数据域隔离设计.md。
+// 若将来演示模式也要演示多班级场景，需把 data-scope.js 的纯函数副本移植到本文件并在
+// dispatch 统一出口注入过滤；当前不做是刻意的设计取舍，避免演示数据「莫名消失」被误判为故障。
 
 function clone(o) { return JSON.parse(JSON.stringify(o)) }
 
-const seed = {
-  // 演示账号已清空：上线前不应随包分发真实工号+姓名组合（原 T001 邓老师 / A001 王管理员 等
-  // 与真实 users 表同名同号，存在凭证泄露风险）。生产走真实后端 users 表；纯 mock 模式下
-  // 登录将无可用账号（仅开发回退用，可接受）。如需本地演示，请用 tools/add-users.js 录入临时账号。
-  users: [],
-  materials: [
-    { id: 'M001', name: '电阻包(1kΩ)', cat: '电子耗材', unit: '包', safe: 10, stock: 25, loc: 'A柜1层' },
-    { id: 'M002', name: '面包板', cat: '电子耗材', unit: '块', safe: 5, stock: 3, loc: 'A柜2层' },
-    { id: 'M003', name: '杜邦线(公对母)', cat: '电子耗材', unit: '扎', safe: 20, stock: 40, loc: 'B柜1层' },
-    { id: 'M004', name: '焊锡丝', cat: '焊接耗材', unit: '卷', safe: 3, stock: 1, loc: 'C柜' }
-  ],
-  tools: [
-    // 字段与生产 normTool 对齐：{id,name,spec,sn,loc,status,borrower,outTime}
-    { id: 'T001', name: '万用表 FLUKE-17', spec: 'FL-17001', sn: 'FL-17001', loc: 'A柜', status: '在库', borrower: '', outTime: '' },
-    { id: 'T002', name: '电烙铁 60W', spec: 'LT-2002', sn: 'LT-2002', loc: 'C柜', status: '借出', borrower: 'S002', outTime: '2026-10-20 10:12' },
-    { id: 'T003', name: '示波器 SDS1104', spec: 'OS-1104', sn: 'OS-1104', loc: 'B柜', status: '在库', borrower: '', outTime: '' }
-  ],
-  requisitions: [
-    { no: 'R20261001', user: 'S002', matId: 'M003', qty: 2, kind: 'material', status: 'pending', time: '2026-10-22 09:30' }
-  ],
-  borrow: [
-    // status 存前端契约值（'借出'/'已还'）：mock 不过 normBorrow，与生产读回形状对齐
-    { id: 'B2026001', toolId: 'T002', user: 'S002', out: '2026-10-20 10:12', in: '', status: '借出' }
-  ],
-  stock_io: [
-    { no: 'IO2026001', matId: 'M001', type: 'in', qty: 10, operator: 'A001', time: '2026-10-18 14:00' }
-  ],
-  access: [
-    { time: '2026-10-22 08:05', actor: 'T001', door: '实训室A', result: '开门' }
-  ],
-  logs: [
-    { time: '2026-10-22 09:30', actor: 'S002', op: '提交领用申请', target: 'M003', result: '待审批' }
-  ],
-  // 实训室归属管理体系（前端回退演示数据；结构与云库一致）
-  labs: [
-    { id: 'L001', name: '物联网综合实训室', campus: '主校区', building: '实训楼A', floor: '3', roomNo: '301', address: '实训楼A 3楼东', lng: 0, lat: 0, managerId: 'T001', managerName: '邓磊', status: '启用', note: '', createdAt: '2026-09-01 09:00', updatedAt: '2026-09-01 09:00' }
-  ],
-  repairs: [
-    { id: 'R1', labId: 'L001', labName: '物联网综合实训室', title: '示波器通道故障', category: '设备故障', desc: 'CH1 无波形', reporterId: 'T001', reporterName: '邓磊', status: '待处理', priority: '紧急', handlerId: '', handlerName: '', resolvedNote: '', createdAt: '2026-10-20 10:00', updatedAt: '2026-10-20 10:00' }
-  ],
-  inspections: [
-    { id: 'I1', labId: 'L001', labName: '物联网综合实训室', title: '月度安全巡检', planDate: '2026-11-01', executorId: 'T001', executorName: '邓磊', status: '待巡检', result: '', createdAt: '2026-10-20 10:00', doneAt: '' }
-  ]
+// —— 数量解析：必须是范围内的整数（与两套生产适配器同款口径）——
+// 小数 2.5 不再被静默截断成 2（账面比实物少 0.5，且与「必须是整数」的文案不符）；
+// 建档期初与盘点实盘允许 0，上限 1000000，避免误输把库存写成天文数字。
+const MAX_QTY = 1000000
+function parseQty(v, min) {
+  const n = Number(v)
+  const lo = (min === undefined) ? 1 : min
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return null
+  if (n < lo || n > MAX_QTY) return null
+  return n
 }
 
-let DB = wx.getStorageSync('lab_mock') || clone(seed)
+const seed = {
+  // 测试数据已全部清空（2026-11-15）：准备录入真实数据。
+  // 仅作为「云函数不可用时」的回退；生产由云函数 docsProxy 读写真实后端。
+  users: [],
+  materials: [],
+  tools: [],
+  requisitions: [],
+  borrow: [],
+  stock_io: [],
+  access: [],
+  logs: [],
+  // 实训室归属管理体系：前端回退演示数据已清空（结构与云库一致）
+  labs: [],
+  repairs: [],
+  inspections: []
+}
+
+// 数据版本戳：seed 结构/内容变更（如 2026-11-15 清空全部演示数据）后必须让旧本地缓存失效，
+// 否则老用户设备上残留的 lab_mock 会优先于新 seed 被读出，演示数据"复活"。版本不一致即重置。
+const DATA_VERSION = 'v2-clean-20261115'
+let DB
+try {
+  const cached = wx.getStorageSync('lab_mock')
+  const cachedVer = wx.getStorageSync('lab_mock_ver')
+  if (cached && cachedVer === DATA_VERSION) {
+    DB = cached
+  } else {
+    DB = clone(seed)
+    wx.setStorageSync('lab_mock_ver', DATA_VERSION)
+    wx.setStorageSync('lab_mock', DB)
+  }
+} catch (e) {
+  DB = clone(seed)
+}
 // 持久化带配额保护：小程序存储上限 10MB，演示模式长时间使用后 logs/stock_io 会膨胀，
 // wx.setStorageSync 超限会 throw——原来直接抛出，被上层 catch 成"操作失败"但看不出原因。
 // 现在：失败 → 裁掉最旧的 logs/stock_io 各 50 条重试一次；仍失败 → 只告警不抛出
@@ -98,27 +106,109 @@ function migrateUsers() {
 }
 migrateUsers()
 function now() {
-  const d = new Date()
+  // 与云函数/两套适配器一致固定 UTC+8 墙钟：非北京时间设备上用本地时区会与 tsOf 的 +08:00 解析错配。
+  const d = new Date(Date.now() + 8 * 3600 * 1000)
   const p = n => ('' + n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`
 }
 function ok(data) { return { code: 0, data } }
+// 演示模式流水记录也带 cls 字段（恒为空），保持与生产返回契约同形。
+function flowCls(x) { return Object.assign({}, x, { cls: x.cls || '' }) }
 function mat(id) { return DB.materials.find(m => m.id === id) }
+// 与云函数同款：机器通道 decision:"approve"|"reject" 归一为 ok:true/false，
+// 并对驳回强制原因（与生产一致，避免演示环境与线上规则漂移）。
+function normalizeApprove(d) {
+  if (!d) return d
+  const x = Object.assign({}, d)
+  if (typeof x.ok !== 'boolean' && x.decision != null) {
+    const v = ('' + x.decision).trim().toLowerCase()
+    x.ok = ['approve', 'approved', 'pass', '通过', '同意', 'true', '1'].indexOf(v) >= 0
+  }
+  return x
+}
 // 演示流水单号：同一毫秒内连写多条会撞号，撞号后「按单号冲销」会命中错误的那一行
 let ioSeq = 0
 function ioNo() { return 'IO' + Date.now() + '_' + (++ioSeq) }
 // 演示时间是北京时间字符串，筛选区间用毫秒时间戳，这里做一次性换算
 function tsOf(s) { const n = Date.parse(('' + (s || '')).replace(' ', 'T') + '+08:00'); return Number.isFinite(n) ? n : 0 }
+// 计划日期是 YYYY-MM-DD 的「日」粒度，按北京时间当日 23:59:59 到期。
+// 直接 tsOf('2026-11-22') 会得到 NaN（缺时间部分），使逾期清单永远为空。
+function planEnd(s) { if (!s) return 0; const t = Date.parse(('' + s).slice(0, 10) + 'T23:59:59+08:00'); return Number.isFinite(t) ? t : 0 }
 // 与生产 planDue(DEFAULT_LOAN_DAYS=7) 对齐：演示模式也要写「应归还日期」，否则逾期恒为空
 function dueStr(days) {
-  const d = new Date(Date.now() + (Math.min(90, Math.max(1, Number(days) || 7))) * 86400000)
+  const d = new Date(Date.now() + 8 * 3600 * 1000 + (Math.min(90, Math.max(1, Number(days) || 7))) * 86400000)
   const p = n => ('' + n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
 }
 // 大小写/空格归一：与生产 findUser 对齐（lab_mock 里的工号可能被手输成 't001'）
 function user(id) {
   const k = ('' + (id || '')).trim().toUpperCase()
   return DB.users.find(u => ('' + (u.id || '')).trim().toUpperCase() === k) || null
+}
+
+
+// —— 与生产适配器同构的归一化（mock 直接吐原始行 → 与线上字段不一致，
+//    表现为演示模式看不到效期提示、工具编号为空。这里补齐，契约与 clouddb 一致）——
+// 效期转换（与生产适配器同口径）：'YYYY-MM-DD' → 该日 23:59:59（北京）epoch 毫秒
+// 效期解析（与生产 expireTs 同款口径，演示与线上必须一致）：
+// 支持 YYYY-MM-DD / YYYY/M/D / YYYY年M月D日 / YYYYMMDD（Excel 里常见 2026/3/5、20260305），
+// 并校验真实日期 —— 2026-02-30 会被 Date.UTC 自动进位到 3-02，实际比用户填的晚 2 天。
+function expireTsMock(v) {
+  const s = ('' + (v || '')).trim()
+  if (!s) return 0
+  const mk = (y, mo, d) => {
+    if (y < 1970 || y > 2100 || mo < 1 || mo > 12 || d < 1) return 0
+    const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate()   // 该月实际天数
+    if (d > dim) return 0
+    return Date.UTC(y, mo - 1, d, 15, 59, 59)              // 15:59:59 UTC == 23:59:59 +08:00
+  }
+  if (/^\d{8}$/.test(s)) return mk(+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8))
+  const m = s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/)
+  if (m) return mk(+m[1], +m[2], +m[3])
+  const n = Number(s)
+  if (Number.isFinite(n) && n > 0) return n
+  return 0
+}
+
+
+// 最后一个启用超管的保护（与生产同口径）：降级/停用/删除最后一个超管会让学生失去唯一管理入口
+function lastSuperGuardMock(userObjs, targetId, nextRole, nextStatus) {
+  const tid = ('' + (targetId || '')).trim().toUpperCase()
+  const cur = (userObjs || []).find(u => ('' + (u.id || '')).trim().toUpperCase() === tid)
+  if (!cur || cur.role !== 'super' || (cur.status || '启用') !== '启用') return null
+  if (nextRole === 'super' && (nextStatus || '启用') === '启用') return null
+  const others = (userObjs || []).filter(u =>
+    ('' + (u.id || '')).trim().toUpperCase() !== tid &&
+    u.role === 'super' && (u.status || '启用') === '启用')
+  if (others.length) return null
+  return { code: 400, data: { msg: '系统必须保留至少一名启用中的超级管理员，不能降级/停用/删除最后一个超管' } }
+}
+
+function normMatMock(f) {
+  const expTs = Number(f.expire) || 0
+  const ms = expTs ? (expTs - Date.now()) : null
+  const DAYS = 86400000
+  return {
+    id: f.id, name: f.name, spec: f.spec || '', cat: f.cat || '', loc: f.loc || '',
+    stock: Number(f.stock) || 0, unit: f.unit || '', safe: Number(f.safe) || 0,
+    status: f.status || '',
+    expire: expTs ? fmtTsMock(expTs) : '',
+    expired: !!(expTs && ms < 0),
+    expiring: !!(expTs && ms >= 0 && ms <= 30 * DAYS)
+  }
+}
+function normToolMock(f) {
+  return {
+    id: f.id, name: f.name, spec: f.spec || f.sn || '', sn: f.sn || f.spec || '',
+    loc: f.loc || '', status: f.status || '', borrower: f.borrower || '', outTime: f.outTime || ''
+  }
+}
+function fmtTsMock(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  const d = new Date(n + 8 * 3600 * 1000)
+  const p = x => ('' + x).padStart(2, '0')
+  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes())
 }
 
 function dispatch(action, data) {
@@ -128,25 +218,37 @@ function dispatch(action, data) {
       const key = ('' + (data.id || '')).trim().toUpperCase()
       const m = DB.materials.find(x => ('' + x.id).toUpperCase() === key)
       const t = DB.tools.find(x => ('' + x.id).toUpperCase() === key)
-      if (m) return ok({ type: 'material', item: m })
-      if (t) return ok({ type: 'tool', item: t })
+      if (m) return ok({ type: 'material', item: normMatMock(m) })
+      if (t) return ok({ type: 'tool', item: normToolMock(t) })
       return { code: 404, data: { msg: '未找到物品' } }
     }
     case 'listMine': {
       const rs = DB.requisitions.filter(r => r.user === data.user)
       const bs = DB.borrow.filter(b => b.user === data.user)
-      return ok({ requisitions: rs, borrow: bs })
+      return ok({ requisitions: rs.map(flowCls), borrow: bs.map(flowCls) })
     }
     case 'pending': {
-      return ok(DB.requisitions.filter(r => r.status === 'pending'))
+      // 与生产 listPending 同款名称映射：审批页要显示姓名与物品名，不是工号与物品ID
+      const nameOf = {}
+      ;(DB.materials || []).forEach(m => { nameOf['' + m.id] = m.name || '' })
+      ;(DB.tools || []).forEach(t => { nameOf['' + t.id] = t.name || '' })
+      const userOf = {}
+      ;(DB.users || []).forEach(u => { userOf['' + u.id] = { name: u.name || '', cls: u.cls || '' } })
+      return ok(DB.requisitions.filter(r => r.status === 'pending').map(r => {
+        const u = userOf['' + r.user] || {}
+        return Object.assign(flowCls(r), {
+          itemName: nameOf['' + r.matId] || nameOf['' + r.toolId] || '',
+          userName: u.name || '', userCls: u.cls || ''
+        })
+      }))
     }
     case 'listMaterials': {
-      return ok(DB.materials)
+      return ok((DB.materials || []).map(normMatMock))
     }
     // 与云侧 mockHandler / prodHandler 对齐：缺失时回退 mock 会掉进 default 404，
     // 前端 tools 恒为空（库存页「在册工具」0 条、工作台工具数 0）——静默且难查
     case 'listTools': {
-      return ok(DB.tools)
+      return ok((DB.tools || []).map(normToolMock))
     }
     // 模糊搜索（前端本地回退）：与云侧 mockHandler 同一返回形状，演示模式也能搜
     case 'search': {
@@ -180,8 +282,9 @@ function dispatch(action, data) {
         time: r.time || '',
         note: r.note || '',
         src: r.src || '',
-        reversed: ('' + (r.note || '')).indexOf('[已冲销]') >= 0,
-        itemName: nameMap[r.matId] || r.matId || ''
+        reversed: ('' + (r.note || '')).indexOf('[已冲销]') >= 0 || (r.src || '') === '冲销' || ('' + (r.note || '')).indexOf('冲销流水') >= 0,
+        itemName: nameMap[r.matId] || r.matId || '',
+        cls: r.cls || ''
       })).filter(r => r.item && r.dir)
       rows = rows.filter(r => {
         if (item && ('' + r.item).toUpperCase().indexOf(item) < 0) return false
@@ -202,6 +305,84 @@ function dispatch(action, data) {
         hasMore: offset + page.length < total,
         inQty: rows.filter(r => r.dir === '入库').reduce((s, r) => s + r.qty, 0),
         outQty: rows.filter(r => r.dir === '出库').reduce((s, r) => s + r.qty, 0)
+      })
+    }
+    case 'addTool': {
+      const nm = ('' + (data.name || '')).trim()
+      if (!nm) return { code: 400, data: { msg: '请填写工具名称' } }
+      const exist = (DB.tools || []).find(t => ('' + (t.name || '')).trim() === nm)
+      if (exist) return { code: 409, data: { msg: '已有同名工具：' + ('' + (exist.id || '')) } }
+      const id = ('' + (data.id || '')).trim() || ('T' + String((DB.tools || []).length + 1).padStart(3, '0'))
+      DB.tools.push({ id, name: nm, spec: ('' + (data.spec || '')).trim(), loc: ('' + (data.loc || '')).trim(), status: '在库', borrower: '', holder: '' })
+      return ok({ id, name: nm, status: '在库' })
+    }
+    case 'listDeliveries': {
+      // 待交付清单（演示路径）：契约与生产一致 {rows,total}。
+      // 演示库不造「已通过未交付」的单，避免老师对着假单子发料。
+      return ok({ rows: [], total: 0 })
+    }
+    case 'confirmDelivery': {
+      const no = '' + (data.no || '')
+      if (!no) return { code: 400, data: { msg: '缺少申请单号' } }
+      return ok({})
+    }
+    case 'listClaims': {
+      // 教师端「领用记录」查询。与生产 listClaims 同形状：
+      // {rows,total,offset,limit,hasMore,byCls,classOptions}
+      const nameMap = {}
+      const unitMap = {}
+      for (const m of DB.materials) { nameMap[m.id] = m.name; unitMap[m.id] = m.unit || '' }
+      const uMap = {}
+      for (const u of DB.users) uMap[u.id] = u
+      const clsFilter = ('' + (data.cls || '')).trim()
+      const itemKw = ('' + (data.item || '')).trim().toUpperCase()
+      const userKw = ('' + (data.user || '')).trim().toUpperCase()
+      const status = ('' + (data.status || '')).trim()
+      // 前端传中文状态（线上存储口径），mock 存英文，需别名映射否则演示筛选恒空
+      const statusAlias = { '待审批': 'pending', '已通过': 'approved', '已拒绝': 'rejected', '已撤销': 'canceled', '已撤回': 'canceled' }
+      const wantStatus = statusAlias[status] || status
+      const from = Number(data.from) || 0
+      const to = Number(data.to) || 0
+      let rows = (DB.requisitions || []).map(r => {
+        const item = r.matId || r.toolId || ''
+        const u = uMap[r.user] || {}
+        return {
+          no: r.no || '', item,
+          itemName: nameMap[item] || item, unit: unitMap[item] || '',
+          qty: Number(r.qty) || 0,
+          user: r.user || '', userName: u.name || r.user || '',
+          cls: r.cls || u.cls || '',
+          reason: r.reason || '', reject: r.reject || '',
+          approver: r.approver || '', status: r.status || '',
+          time: r.time || ''
+        }
+      }).filter(r => {
+        if (clsFilter && r.cls !== clsFilter) return false
+        if (itemKw && ('' + r.item).toUpperCase().indexOf(itemKw) < 0 && ('' + r.itemName).toUpperCase().indexOf(itemKw) < 0) return false
+        if (userKw && ('' + r.user).toUpperCase().indexOf(userKw) < 0 && ('' + r.userName).toUpperCase().indexOf(userKw) < 0) return false
+        if (wantStatus && r.status !== wantStatus) return false
+        const t = tsOf(r.time)
+        if (from && t && t < from) return false
+        if (to && t && t > to) return false
+        return true
+      })
+      rows.sort((a, b) => ('' + b.time).localeCompare('' + a.time))
+      const total = rows.length
+      const offset = Math.max(0, Number(data.offset) || 0)
+      const limit = Math.min(200, Math.max(1, Number(data.limit) || 50))
+      const page = rows.slice(offset, offset + limit)
+      const byCls = {}
+      rows.forEach(r => {
+        const key = r.cls || '未标注班级'
+        if (!byCls[key]) byCls[key] = { cls: key, qty: 0, count: 0 }
+        byCls[key].qty += r.qty
+        byCls[key].count += 1
+      })
+      return ok({
+        rows: page, total, offset, limit,
+        hasMore: offset + page.length < total,
+        byCls: Object.values(byCls).sort((a, b) => b.qty - a.qty),
+        classOptions: Array.from(new Set(rows.map(r => r.cls).filter(Boolean))).sort()
       })
     }
     // 以下 4 个 case 是前端会调到、但原先缺失的 action：缺失时云函数不可用会回退到这里，
@@ -271,8 +452,8 @@ function dispatch(action, data) {
         const book = Number(m.stock) || 0
         // 与生产 stocktake 对齐：实盘数必须是不小于 0 的整数（旧版 Math.max(0,…) 会把
         // 误填的负数当成 0 去调整，等于凭空出一笔库）
-        const real = Math.floor(Number(it.real))
-        if (!Number.isFinite(real) || real < 0) return { code: 400, data: { msg: '实盘数量必须是不小于 0 的整数：' + it.matId } }
+        const real = parseQty(it.real, 0)
+        if (real === null) return { code: 400, data: { msg: '实盘数量必须是 0 ~ 1000000 之间的整数：' + it.matId } }
         // 期初建账与盘点统一收敛到「实盘数」：diff=实盘-账面，m.stock=实盘（而非 book+diff）。
         // 旧版期初用 diff=real 再 m.stock=book+real 会翻倍（book 非空时 102+80→182）。
         const diff = real - book
@@ -299,8 +480,8 @@ function dispatch(action, data) {
       for (const it of items) {
         const matId = ('' + (it.matId || '')).trim()
         if (!matId) continue
-        const qty = Math.floor(Number(it.qty) || 0)
-        if (qty < 1) return { code: 400, data: { msg: '数量必须是大于 0 的整数：' + matId } }
+        const qty = parseQty(it.qty)
+        if (qty === null) return { code: 400, data: { msg: '数量必须是 1 ~ 1000000 之间的整数：' + matId } }
         merged[matId] = (merged[matId] || 0) + qty
       }
       const keys = Object.keys(merged)
@@ -329,7 +510,9 @@ function dispatch(action, data) {
       if (!no) return { code: 400, data: { msg: '缺少流水号' } }
       const r = (DB.stock_io || []).find(x => ('' + (x.no || x.id || '')) === no)
       if (!r) return { code: 404, data: { msg: '流水不存在：' + no } }
-      if (('' + (r.note || '')).indexOf('[已冲销]') >= 0) return { code: 400, data: { msg: '该流水已冲销过，不可重复冲销' } }
+      if (('' + (r.note || '')).indexOf('[已冲销]') >= 0 || (r.src || '') === '冲销' || ('' + (r.note || '')).indexOf('冲销流水') >= 0) {
+        return { code: 400, data: { msg: '该流水已冲销或本身就是冲销产生的反向流水，不可再次冲销' } }
+      }
       const m = mat(r.matId)
       if (!m) return { code: 400, data: { msg: '关联物品不存在：' + r.matId } }
       const qty = Number(r.qty) || 0
@@ -338,7 +521,7 @@ function dispatch(action, data) {
       if (next < 0) return { code: 400, data: { msg: '冲销后库存为负（当前 ' + m.stock + '，需退回 ' + qty + '）' } }
       m.stock = next
       r.note = '[已冲销] ' + (r.note || '')
-      DB.stock_io.push({ no: ioNo(), matId: r.matId, type: backType, qty, operator: data.actor || '', time: now(), note: '冲销流水 ' + no, src: '冲销' })
+      DB.stock_io.push({ no: ioNo(), matId: r.matId, type: backType, qty, operator: data.actor || '', time: now(), note: '冲销流水 ' + no, src: '冲销', cls: r.cls || '' })
       DB.logs.push({ time: now(), actor: data.actor || '', op: '冲销出入库流水', target: no, result: '已冲销' })
       persist()
       return ok({ no, item: r.matId, dir: backType === 'in' ? '入库' : '出库', qty, stock: next })
@@ -351,7 +534,7 @@ function dispatch(action, data) {
       const from = Number(data.from) || 0
       const to = Number(data.to) || 0
       const rows = (DB.logs || []).map((l, i) => ({
-        id: l.id || 'L' + i, time: l.time || '', actor: l.actor || '', op: l.op || '', target: l.target || '', result: l.result || ''
+        id: l.id || 'L' + i, time: l.time || '', actor: l.actor || '', op: l.op || '', target: l.target || '', result: l.result || '', cls: l.cls || ''
       })).filter(l => {
         if (actor && ('' + l.actor).toUpperCase().indexOf(actor) < 0) return false
         if (op && l.op !== op) return false
@@ -415,6 +598,18 @@ function dispatch(action, data) {
       const u = DB.users.find(x => ('' + x.id).toUpperCase() === key)
       return u ? ok({ id: u.id, name: u.name, role: u.role, cls: u.cls || '' }) : { code: 404, data: { msg: '未找到该工号' } }
     }
+    // 机器通道身份自查（离线演示）
+    case 'robotIdentity': {
+      const u = DB.users.find(x => ('' + x.id).toUpperCase() === ('' + (data.id || '')).trim().toUpperCase())
+        || DB.users.find(x => x.role === (data.role || 'teacher'))
+      if (!u) return { code: 401, data: { msg: '离线演示未找到对应身份' } }
+      return ok({
+        id: u.id, name: u.name, role: u.role, channel: 'wechat', channelLabel: '离线演示（本地内存）',
+        scopeFull: true, scopeLabel: '全部班级（演示模式不隔离）',
+        managedClasses: u.managedClasses || '', cls: u.cls || '',
+        warning: '离线演示不隔离数据，不代表线上真实权限。'
+      })
+    }
     // 个人机器人密钥：本地演示无云端身份体系，密钥管理必须在联网（真实云函数）下进行
     case 'robotKeyStatus': return ok({ hasKey: false })
     case 'genRobotKey': return { code: 400, data: { msg: '离线演示模式不支持生成密钥，请联网并在小程序内登录后操作' } }
@@ -422,14 +617,14 @@ function dispatch(action, data) {
     case 'addMaterial': {
       const name = ('' + (data.name || '')).trim()
       if (!name) return { code: 400, data: { msg: '请填写物品名称' } }
-      const qty = Math.floor(Number(data.qty) || 0)
-      if (qty < 0) return { code: 400, data: { msg: '数量不能为负数' } }
+      const qty = parseQty(data.qty, 0)
+      if (qty === null) return { code: 400, data: { msg: '数量必须是 0 ~ 1000000 之间的整数' } }
       const dup = DB.materials.find(x => x.name === name)
       if (dup) return { code: 409, data: { msg: '该物品已存在：' + dup.id, matId: dup.id } }
       let max = 0
       DB.materials.forEach(x => { const m = /^\s*[Mm](\d+)\s*$/.exec('' + x.id); if (m) max = Math.max(max, parseInt(m[1], 10) || 0) })
       const newId = 'M' + String(max + 1).padStart(3, '0')
-      DB.materials.push({ id: newId, name, spec: data.spec || '', cat: data.cat || '电子元件', loc: data.loc || '', stock: qty, unit: data.unit || '个', safe: Number(data.safe) || 0, status: '正常' })
+      DB.materials.push({ id: newId, name, spec: data.spec || '', cat: data.cat || '电子元件', loc: data.loc || '', stock: qty, unit: data.unit || '个', safe: Number(data.safe) || 0, status: '正常', expire: expireTsMock(data.expire) })
       DB.stock_io.push({ no: ioNo(), matId: newId, type: 'in', qty, operator: data.actor, time: now(), note: '建档入库', src: '建档入库' })
       DB.logs.push({ time: now(), actor: data.actor, op: '新增耗材', target: newId, result: '建档成功' })
       persist()
@@ -458,12 +653,15 @@ function dispatch(action, data) {
         const existing = (id && byId.get(id)) || byName.get(name)
         if (existing) {
           existing.spec = spec; existing.cat = cat; existing.loc = loc; existing.unit = unit; existing.safe = safe
+          const expTs = expireTsMock(raw.expire)
+          if (expTs) existing.expire = expTs
           if (setStock) existing.stock = stockNum
           updated.push({ id: existing.id, name })
         } else {
           max += 1
           const newId = id || ('M' + String(max).padStart(3, '0'))
-          DB.materials.push({ id: newId, name, spec, cat, loc, stock: stockNum, unit, safe, status: '正常' })
+          // expire 必须来自本行的 raw.expire：此前新建行根本没写 expire → 导入带效期的耗材时效期丢失
+          DB.materials.push({ id: newId, name, spec, cat, loc, stock: stockNum, unit, safe, status: '正常', expire: expireTsMock(raw.expire) })
           if (stockNum > 0) DB.stock_io.push({ no: ioNo(), matId: newId, type: 'in', qty: stockNum, operator: data.actor, time: now(), note: '清单导入·建档入库', src: '清单导入' })
           created.push({ id: newId, name, stock: stockNum })
         }
@@ -486,7 +684,7 @@ function dispatch(action, data) {
         const id = ('' + (raw.id || '')).trim()
         const spec = ('' + (raw.spec || '')).trim()
         const loc = ('' + (raw.loc || '')).trim()
-        const status = ('' + (raw.status || '')).trim() || '正常'
+        const status = ('' + (raw.status || '')).trim() || '在库'
         const holder = ('' + (raw.holder || '')).trim()
         const existing = (id && byId.get(id)) || byName.get(name)
         if (existing) {
@@ -510,12 +708,21 @@ function dispatch(action, data) {
     }
     // 强制刷新：本地 mock 无缓存，直接放行（与云端 fresh 语义一致）
     case 'fresh': return ok({ cleared: true })
+    // 全库快照（离线演示）：与云函数 snapshot 同形状，供「数据备份」页在无云环境时也能导出。
+    case 'snapshot': {
+      const users = (DB.users || []).map(u => ({ rid: 'm_' + u.id, id: u.id, name: u.name, role: u.role, cls: u.cls || '', managedClasses: u.managedClasses || '', status: u.status || '启用', bound: false }))
+      const byRole = users.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a }, {})
+      const dump = JSON.parse(JSON.stringify(DB))
+      dump.users = users
+      dump.usersByRole = byRole
+      return ok(dump)
+    }
     case 'requisition': {
       // 与生产路径一致：数量/物品ID 校验，不信客户端
       const matId = ('' + (data.matId || '')).trim()
       if (!matId) return { code: 400, data: { msg: '缺少物品ID，无法提交申请' } }
-      const qty = Math.floor(Number(data.qty) || 0)
-      if (qty < 1) return { code: 400, data: { msg: '数量必须是大于 0 的整数' } }
+      const qty = parseQty(data.qty)
+      if (qty === null) return { code: 400, data: { msg: '数量必须是 1 ~ 1000000 之间的整数' } }
       // 与生产 requisition 对齐：用途必填，否则演示能提交、线上被拒
       if (!('' + (data.reason || '')).trim()) return { code: 400, data: { msg: '请填写用途说明' } }
       if (!mat(matId)) return { code: 400, data: { msg: '物品不存在：' + matId } }
@@ -531,45 +738,112 @@ function dispatch(action, data) {
       if (!('' + (data.reason || '')).trim()) return { code: 400, data: { msg: '请填写用途说明' } }
       if (!DB.tools.find(x => x.id === toolId)) return { code: 400, data: { msg: '工具不存在：' + toolId } }
       const no = 'R' + Date.now()
-      DB.requisitions.push({ no, user: data.user, toolId, kind: 'tool', status: 'pending', time: now(), reason: data.reason || '', reject: '' })
+      // 借期：学生在申请时填的天数（1~90），审批通过后按它算应还日期
+      const reqDays = Math.min(90, Math.max(1, parseInt(data.days, 10) || 7))
+      DB.requisitions.push({ no, user: data.user, toolId, kind: 'tool', days: reqDays, status: 'pending', time: now(), reason: data.reason || '', reject: '' })
       DB.logs.push({ time: now(), actor: data.user, op: '提交工具借出申请', target: toolId, result: '待审批' })
       persist()
       return ok({ no })
     }
     case 'approve': {
-      const r = DB.requisitions.find(x => x.no === data.no)
+      const ap = normalizeApprove(data)
+      const r = DB.requisitions.find(x => x.no === ap.no)
       if (!r) return { code: 404, data: {} }
       // 与生产 approve 同款守卫：已处理（approved/rejected）的单不能再审批。
       // 缺这个守卫时，重复点击/两个审批人同时点通过 → 二次扣库存、重复建借还记录。
       if (r.status !== 'pending') return { code: 400, data: { msg: '该申请已处理' } }
-      if (data.ok) {
+      if (!ap.ok) {
+        const why = ('' + (ap.reason || '')).trim().slice(0, 60)
+        if (!why) return { code: 400, data: { msg: '请填写驳回原因，便于申请人知晓（如：库存暂缺，请改用替代型号）' } }
+        r.reject = why
+      }
+      if (ap.ok) {
         if (r.kind === 'tool') {
           const t = DB.tools.find(x => x.id === r.toolId)
           if (!t) return { code: 404, data: { msg: '工具不存在' } }
           if (t.status !== '在库') return { code: 400, data: { msg: '该工具不在库' } }
-          DB.borrow.push({ id: 'B' + Date.now(), toolId: r.toolId, user: r.user, out: now(), plan: dueStr(data.days), in: '', status: '借出' })
+          DB.borrow.push({ id: 'B' + Date.now(), toolId: r.toolId, user: r.user, out: now(), plan: dueStr(ap.days || r.days), in: '', status: '借出', note: (r.reason || '').trim().slice(0, 120) })
           t.status = '借出'; t.borrower = r.user; t.outTime = now()
-          DB.logs.push({ time: now(), actor: data.actor, op: '审批通过工具借出', target: r.toolId, result: '已通过' })
+          DB.logs.push({ time: now(), actor: ap.actor || data.actor, op: '审批通过工具借出', target: r.toolId, result: '已通过' })
         } else {
           const m = mat(r.matId)
           if (m.stock < r.qty) return { code: 400, data: { msg: '库存不足' } }
+          // 与生产同款幂等闸门：本单若已出过库，绝不二次扣减库存
+          if (DB.stock_io.some(x => x.note === '领用申请 ' + r.no)) {
+            r.status = 'approved'
+            return ok({ idempotent: true, no: r.no, warn: '该申请此前已出库，本次未重复扣减库存' })
+          }
           m.stock -= r.qty
-          DB.logs.push({ time: now(), actor: data.actor, op: '审批通过领用', target: r.matId, result: '已通过' })
+          // 与生产同构：审批通过同步写出库流水，避免演示模式库存与流水对不上
+          DB.stock_io.push({ no: ioNo(), matId: r.matId, type: 'out', qty: r.qty, operator: ap.actor || data.actor || r.user || '', time: now(), note: '领用申请 ' + r.no, src: '领用出库', cls: r.cls || '' })
+          DB.logs.push({ time: now(), actor: ap.actor || data.actor, op: '审批通过', target: r.matId, result: '已通过' })
         }
         r.status = 'approved'
       } else {
         r.status = 'rejected'
-        DB.logs.push({ time: now(), actor: data.actor, op: '审批拒绝', target: r.no, result: '已拒绝' })
+        DB.logs.push({ time: now(), actor: ap.actor || data.actor, op: '审批拒绝', target: r.no, result: '已拒绝' })
       }
       persist()
       return ok({})
+    }
+    case 'batchReject': {
+      const nos = Array.isArray(data.nos) ? data.nos.map(x => '' + x).filter(Boolean) : []
+      if (!nos.length) return { code: 400, data: { msg: '请先选择要驳回的申请' } }
+      const why = ('' + (data.reason || '')).trim().slice(0, 60)
+      if (!why) return { code: 400, data: { msg: '请填写驳回原因' } }
+      const okNos = [], skipped = []
+      for (const no of nos) {
+        const r = DB.requisitions.find(x => x.no === no)
+        if (!r || r.status !== 'pending') { skipped.push({ no, reason: r ? '该申请已处理' : '申请不存在' }); continue }
+        r.status = 'rejected'; r.reject = why
+        DB.logs.push({ time: now(), actor: data.actor, op: '审批拒绝', target: no, result: '已拒绝：' + why, cls: r.cls || '' })
+        okNos.push(no)
+      }
+      persist()
+      return ok({ ok: okNos.length, skipped, nos: okNos })
+    }
+    case 'revokeApprove': {
+      const no = '' + (data.no || '')
+      const r = DB.requisitions.find(x => x.no === no)
+      if (!r) return { code: 404, data: { msg: '申请不存在：' + no } }
+      if (r.status !== 'approved') return { code: 400, data: { msg: r.status === 'canceled' ? '该申请已撤销' : '只有「已通过」的申请可以撤销' } }
+      const info = { no, kind: r.kind === 'tool' ? 'tool' : 'material', rolledBack: false }
+      if (r.kind === 'tool') {
+        const t = DB.tools.find(x => x.id === r.toolId)
+        if (t && t.borrower === r.user) { t.status = '在库'; t.borrower = ''; t.outTime = ''; info.rolledBack = true }
+        const bs = DB.borrow.filter(x => x.toolId === r.toolId && x.user === r.user && x.status === '借出')
+        bs.forEach(b => { b.status = '已还'; b.in = now(); info.rolledBack = true })
+        info.impact = info.rolledBack ? 'rolledBack' : 'none'
+      } else {
+        const m = mat(r.matId)
+        // note 由审批写入，是可靠锚点；src 可能缺列（旧数据/手工表格），不能作为硬条件
+        const out = DB.stock_io.find(x => x.note === '领用申请 ' + no && ('' + x.note).indexOf('[已冲销]') < 0 && x.src !== '冲销')
+        if (out && m) {
+          m.stock = (Number(m.stock) || 0) + (Number(out.qty) || 0)
+          out.note = '[已冲销] ' + out.note
+          DB.stock_io.push({ no: ioNo(), matId: r.matId, type: 'in', qty: out.qty, operator: data.actor, time: now(), note: '冲销流水 ' + out.no, src: '冲销', cls: out.cls || r.cls || '' })
+          info.rolledBack = true; info.stock = m.stock; info.impact = 'rolledBack'
+        } else {
+          // 找不到账务影响不能当成「无需回滚」——否则库存没回来却看不出问题
+          info.impact = 'missing'
+          info.warn = '未找到该申请对应的出库流水，库存可能未回补，请人工核对库存'
+        }
+      }
+      r.status = 'canceled'; r.reject = ('' + (data.reason || '')).trim().slice(0, 60) || '审批撤销'
+      DB.logs.push({
+        time: now(), actor: data.actor, op: '审批撤销', target: no,
+        result: info.rolledBack ? '已撤销并回滚' : (info.impact === 'missing' ? '已撤销（未找到出库流水，库存未回补）' : '已撤销（无需回滚）'),
+        cls: r.cls || ''
+      })
+      persist()
+      return ok(info)
     }
     case 'io': {
       const m = mat(data.matId)
       if (!m) return { code: 404, data: {} }
       if (data.type !== 'in' && data.type !== 'out') return { code: 400, data: { msg: '登记方向必须是 in / out' } }
-      const qty = Math.floor(Number(data.qty) || 0)
-      if (qty < 1) return { code: 400, data: { msg: '数量必须是大于 0 的整数' } }
+      const qty = parseQty(data.qty)
+      if (qty === null) return { code: 400, data: { msg: '数量必须是 1 ~ 1000000 之间的整数' } }
       if (data.type === 'out' && m.stock < qty) return { code: 400, data: { msg: '出库超库存' } }
       m.stock += data.type === 'in' ? qty : -qty
       DB.stock_io.push({ no: ioNo(), matId: data.matId, type: data.type, qty, operator: data.actor, time: now(), src: data.src || (data.type === 'in' ? '手动入库' : '手动出库') })
@@ -584,25 +858,41 @@ function dispatch(action, data) {
       // 注意：mock DB 存的是「前端契约值」——生产路径 normBorrow 会把表里的「借出中」翻成
       // 「借出」、「已归还」翻成「已还」，mine.wxml 按 item.status==='借出' 渲染。
       // mock 不过 normBorrow，所以这里必须直接存契约值，不能存中文表值。
-      DB.borrow.push({ id: 'B' + Date.now(), toolId: data.toolId, user: data.user, out: now(), plan: dueStr(data.days), in: '', status: '借出' })
+      DB.borrow.push({ id: 'B' + Date.now(), toolId: data.toolId, user: data.user, out: now(), plan: dueStr(data.days), in: '', status: '借出', note: (data.note || '').trim().slice(0, 120) })
       t.status = '借出'; t.borrower = data.user; t.outTime = now()
-      DB.logs.push({ time: now(), actor: data.user, op: '借出工具', target: data.toolId, result: '借出' })
+      DB.logs.push({ time: now(), actor: data.actor || data.user, op: '借出工具', target: data.toolId, result: '借出' })
       persist()
       return ok({})
     }
+    case 'directBorrow': {
+      const borrower = ('' + (data.borrower || '')).trim().toUpperCase()
+      if (!borrower) return { code: 400, data: { msg: '请填写借用工号' } }
+      const u = DB.users.find(x => ('' + x.id).trim().toUpperCase() === borrower)
+      if (!u) return { code: 404, data: { msg: '借用人不存在或已停用：' + borrower } }
+      const t = DB.tools.find(x => ('' + x.id).toUpperCase() === ('' + (data.toolId || '')).trim().toUpperCase())
+      if (!t) return { code: 404, data: {} }
+      if (t.status !== '在库') return { code: 400, data: { msg: '该工具不在库' } }
+      const cls = u.cls || ''
+      DB.borrow.push({ id: 'B' + Date.now(), toolId: data.toolId, user: u.id, out: now(), plan: dueStr(data.days), in: '', status: '借出', cls, note: (data.note || '').trim().slice(0, 120) })
+      t.status = '借出'; t.borrower = u.id; t.outTime = now()
+      DB.logs.push({ time: now(), actor: data.actor || u.id, op: '借出工具', target: data.toolId, result: '借出', cls, note: '教师直接借出给 ' + u.id })
+      persist()
+      return ok({ borrower: u.id, cls })
+    }
     case 'returnTool': {
       const b = DB.borrow.find(x => x.toolId === data.toolId && x.status === '借出')
+      if (!b) return { code: 404, data: { msg: '没有可归还的记录（该工具当前不在借出中）' } }
       const t = DB.tools.find(x => x.id === data.toolId)
-      if (b) { b.status = '已还'; b.in = now() }
+      b.status = '已还'; b.in = now(); b.backNote = (data.note || '').trim().slice(0, 120)
       if (t) { t.status = '在库'; t.borrower = ''; t.outTime = '' }
-      DB.logs.push({ time: now(), actor: data.actor, op: '归还工具', target: data.toolId, result: '已还' })
+      DB.logs.push({ time: now(), actor: data.actor, op: '归还工具', target: data.toolId, result: '已还' + (b.backNote ? '：' + b.backNote : '') })
       persist()
       return ok({})
     }
     // 预警聚合（L2 主动服务数据源，离线演示同构）：低库存 + 逾期巡检 + 待审批
     case 'alerts': {
       const lowStock = (DB.materials || [])
-        .filter(m => (Number(m.safe) || 0) > 0 && (Number(m.stock) || 0) <= (Number(m.safe) || 0))
+        .filter(m => (Number(m.safe) || 0) > 0 && (Number(m.stock) || 0) < (Number(m.safe) || 0))
         .map(m => ({ id: m.id, name: m.name, stock: Number(m.stock) || 0, safe: Number(m.safe) || 0, loc: m.loc || '' }))
       const overdueInspections = (DB.inspections || [])
         .map(r => ({ ...r, overdue: r.status === '待巡检' && !!r.planDate && Date.now() > planEnd(r.planDate) }))
@@ -678,7 +968,7 @@ function dispatch(action, data) {
       const toolTurnover = Object.keys(turnMap).map(k => turnMap[k]).sort((a, b) => b.times - a.times).slice(0, 10)
       const borrowTotal = (DB.borrow || []).length
       const borrowOpen = (DB.borrow || []).filter(b => b.status !== '已还').length
-      const overdue = (DB.borrow || []).filter(b => b.status !== '已还' && b.plan && tsOf(b.plan) && Date.now() > tsOf(b.plan))
+      const overdue = (DB.borrow || []).filter(b => b.status !== '已还' && planEnd(b.plan) && Date.now() > planEnd(b.plan))
       const lowStock = (DB.materials || []).filter(m => (Number(m.safe) || 0) > 0 && (Number(m.stock) || 0) < (Number(m.safe) || 0))
         .sort((a, b) => (a.stock / Math.max(1, a.safe)) - (b.stock / Math.max(1, b.safe)))
         .map(m => ({ id: m.id, name: m.name, stock: Number(m.stock) || 0, safe: Number(m.safe) || 0, unit: m.unit || '' }))
@@ -699,8 +989,22 @@ function dispatch(action, data) {
         reqStat
       })
     }
+    case 'listStaff': {
+      // 教职工名册（指派用）：只返回工号/姓名/角色，停用账号不返回
+      const staff = (DB.users || [])
+        .filter(u => u.role === 'teacher' || u.role === 'admin' || u.role === 'super')
+        .filter(u => (u.status || '启用') !== '停用')
+        .map(u => ({ id: u.id, name: u.name, role: u.role }))
+      return ok(staff)
+    }
     case 'adminListUsers': {
-      return ok(DB.users.map(u => ({ rid: 'm_' + u.id, id: u.id, name: u.name, role: u.role, cls: u.cls || '', status: u.status || '启用', bound: false })))
+      // 按调用者层级过滤（与生产一致：super 全量，admin 见教师/学生，teacher 仅见学生）
+      const LV = { student: 0, teacher: 1, admin: 2, super: 3 }
+      const me = DB.users.find(u => ('' + (u.id || '')).trim().toUpperCase() === ('' + (data.actor || '')).trim().toUpperCase())
+      const cl = me && LV[me.role] != null ? LV[me.role] : 3
+      const all = DB.users.map(u => ({ rid: 'm_' + u.id, id: u.id, name: u.name, role: u.role, cls: u.cls || '', status: u.status || '启用', bound: false }))
+      const filtered = cl >= 3 ? all : all.filter(u => (LV[u.role] != null ? LV[u.role] : 0) < cl)
+      return ok(filtered)
     }
     case 'adminUpsertUser': {
       const id = ('' + (data.id || '')).trim().toUpperCase()
@@ -712,15 +1016,32 @@ function dispatch(action, data) {
       if (['student', 'teacher', 'admin', 'super'].indexOf(role) < 0) return { code: 400, data: { msg: '角色非法' } }
       if (status !== '启用' && status !== '停用') return { code: 400, data: { msg: '状态非法' } }
       const ex = DB.users.find(x => ('' + x.id).toUpperCase() === id)
+      const g = lastSuperGuardMock(DB.users, id, role, status)
+      if (g) return g
       if (ex) { ex.name = name; ex.role = role; ex.cls = cls; ex.status = status }
       else DB.users.push({ id, name, role, cls, status })
       persist()
       return ok({ id })
     }
+    case 'adminUnbindUser': {
+      const id = ('' + (data.id || '')).trim().toUpperCase()
+      const u = (DB.users || []).find(x => ('' + x.id).toUpperCase() === id)
+      if (!u) return { code: 404, data: { msg: '该工号不存在' } }
+      if (!u.openid) return { code: 400, data: { msg: '该账号尚未绑定微信，无需解绑' } }
+      u.openid = ''
+      persist()
+      return ok({ id, unbound: true })
+    }
     case 'adminDeleteUser': {
       const id = ('' + (data.id || '')).trim().toUpperCase()
       const idx = DB.users.findIndex(x => ('' + x.id).toUpperCase() === id)
       if (idx < 0) return { code: 404, data: { msg: '该工号不存在' } }
+      // 与生产一致：已绑定微信的账号不能物理删除（否则同工号重建后绑定保护失效）
+      if (DB.users[idx].openid) {
+        return { code: 409, data: { msg: '该账号已绑定微信，不能直接删除：请改用「停用」（保留档案与绑定），或先「解绑」再删除' } }
+      }
+      const g = lastSuperGuardMock(DB.users, id, null, null)
+      if (g) return g
       DB.users.splice(idx, 1)
       persist()
       return ok({ id })
@@ -785,7 +1106,7 @@ function dispatch(action, data) {
         if (f.status && ('' + r.status) !== ('' + f.status)) return false
         return true
       }).sort((a, b) => (tsOf(b.createdAt) || 0) - (tsOf(a.createdAt) || 0))
-      return ok(list)
+      return ok(list.map(flowCls))
     }
     case 'addRepair': {
       const title = ('' + (data.title || '')).trim()
@@ -812,7 +1133,6 @@ function dispatch(action, data) {
     }
     case 'listInspections': {
       const f = data || {}
-      const planEnd = (s) => { if (!s) return 0; const t = new Date('' + s + 'T23:59:59+08:00').getTime(); return isNaN(t) ? 0 : t }
       let list = DB.inspections.map(r => ({ ...r, overdue: r.status === '待巡检' && !!r.planDate && Date.now() > planEnd(r.planDate) }))
       list = list.filter(r => {
         if (f.labId && ('' + r.labId).trim().toUpperCase() !== ('' + f.labId).trim().toUpperCase()) return false
@@ -820,7 +1140,7 @@ function dispatch(action, data) {
         if (f.status && ('' + r.status) !== ('' + f.status)) return false
         return true
       }).sort((a, b) => (tsOf(b.createdAt) || 0) - (tsOf(a.createdAt) || 0))
-      return ok(list)
+      return ok(list.map(flowCls))
     }
     case 'addInspection': {
       const title = ('' + (data.title || '')).trim()
@@ -853,6 +1173,8 @@ function dispatch(action, data) {
 
 module.exports = {
   dispatch,
+  // 测试钩子：把内存库整体替换掉（供 tools/test_parity.js 与生产适配器做同数据对拍）
+  __setDbForTest: (d) => { DB = d || clone(seed) },
   reset: () => { DB = clone(seed); persist() },
   getUser: (id) => user((id || '').trim().toUpperCase()) || null,
   listUsers: () => clone(DB.users)

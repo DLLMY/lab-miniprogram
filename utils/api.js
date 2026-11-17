@@ -29,6 +29,30 @@ function markMock() {
     }
   } catch (e) { /* 忽略 */ }
 }
+// —— 集中式"演示数据"告警 ——
+// 背景：除首页/库存/我的三页外，其余页面都不显示数据来源。而 api.call 的读操作在
+//   云函数调用失败时会**静默回退本机 mock** → 老师看到的是伪造的日志、流水、审批单，
+//   却以为在查真实台账，甚至据此录入真实业务数据（结果写进本机 demo 库，事后一片空白）。
+//   这里在"首次回退到 mock"时弹一次全局告警，一次性覆盖所有页面。
+let _demoNoticed = false
+function demoNotice(reason) {
+  if (_demoNoticed) return
+  _demoNoticed = true
+  const configured = cloudEnvOk()
+  const head = configured
+    ? '云函数调用失败（网络异常或云函数未部署），页面上的数据来自本机演示库。'
+    : '当前未配置云环境，页面上的数据来自本机演示库。'
+  try {
+    wx.showModal({
+      title: '当前显示的是演示数据',
+      content: head + (reason ? ('\n' + reason) : '') +
+        '\n请勿据此录入真实业务数据；确认云函数部署与网络后重新进入小程序。',
+      showCancel: false,
+      confirmText: '知道了'
+    })
+  } catch (e) { /* 忽略 */ }
+}
+
 // 真实后端标识 → 用户可见文案
 function backendLabel(b) {
   if (b === 'cloud') return '微信云数据库'
@@ -72,6 +96,7 @@ function call(action, data = {}) {
     const fallback = (why) => {
       console.warn('[api] 回退本地 mock (' + why + '), action=' + action)
       markMock()
+      demoNotice(why)
       try {
         const r = mock.dispatch(action, data)
         done(r && r.code === 0 ? r.data : null) // 与云路径一致：业务错误（如库存不足）→ null
@@ -139,13 +164,13 @@ function call(action, data = {}) {
 function callFull(action, data = {}, opts) {
   const noFallback = !!(opts && opts.noFallback)
   const transportFail = () => (noFallback
-    ? { code: 503, data: { msg: '云函数调用失败（网络异常或云函数未部署），请检查网络后重试' } }
+    ? { code: 503, data: { msg: '云函数调用失败（网络异常或云函数未部署）。若刚才的提交已到达服务器，可能已经生效 —— 请先刷新页面核对，确认没生效再重试' } }
     : null)
   return new Promise((resolve) => {
     let settled = false
     const done = (v) => { if (!settled) { settled = true; resolve(v) } }
     const mockFallback = () => {
-      try { markMock(); return mock.dispatch(action, data) } catch (e) { return null }
+      try { markMock(); demoNotice('云函数不可用，已回退本机演示数据'); return mock.dispatch(action, data) } catch (e) { return null }
     }
     const canCloud = cloudEnvOk() && !!wx.cloud && typeof wx.cloud.callFunction === 'function'
     if (!canCloud) {
@@ -202,4 +227,8 @@ function warnIfDemo() {
   } catch (e) { /* 忽略 */ }
 }
 
-module.exports = { call, callFull, isDemoData, warnIfDemo, backendLabel }
+// 幂等命中提示：实现放在 utils/idem.js（纯函数，不依赖 wx），
+// 前端、云函数与测试三处共用同一份，避免两份实现悄悄漂移。
+const { idemWarn } = require('./idem.js')
+
+module.exports = { call, callFull, isDemoData, warnIfDemo, backendLabel, demoNotice, idemWarn }

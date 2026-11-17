@@ -40,27 +40,42 @@ async function lookup(id) {
     const api = require('./api.js')
     try {
       const u = await api.call('findUser', { id })
-      if (u) return { id: u.id, name: u.name, role: u.role, cls: u.cls || '' }
+      // publicUser 已带 cls / managedClasses —— 后者必须留存到本地身份里：
+      //   教师要靠它知道「我能管哪些班的学生」，否则新增学生时无法选对归属班级。
+      if (u) return { id: u.id, name: u.name, role: u.role, cls: u.cls || '', managedClasses: u.managedClasses || '' }
       // 云端查不到（含旧版云函数未部署 findUser 时返回 404）→ 回落 mock，保证登录不中断
     } catch (e) { /* 落到本地 mock */ }
   }
   const mock = require('./mock.js')
-  return mock.getUser(id) || null
+  const m = mock.getUser(id)
+  return m ? { id: m.id, name: m.name, role: m.role, cls: m.cls || '', managedClasses: m.managedClasses || '' } : null
 }
 
 async function login(id) {
   const u = await lookup(id)
   if (!u) return null
-  const identity = { id: u.id, name: u.name, role: normalizeRole(u.role) }
+  const identity = makeIdentity(u)
   wx.setStorageSync('lab_identity', identity)
   syncGlobal()
   return identity
 }
 
+// 统一的身份对象构造：cls（本人班级）与 managedClasses（带班班级）必须一起留存，
+// 前端「教师管理本班学生」的范围判断依赖它（与后端 ds.scope.classes 同源）。
+function makeIdentity(u) {
+  return {
+    id: u.id,
+    name: u.name,
+    role: normalizeRole(u.role),
+    cls: u.cls || '',
+    managedClasses: u.managedClasses || ''
+  }
+}
+
 // 用已查到的用户对象直接登录（whoami 免输工号自动登录用，无需再查一次）
 function loginWithUser(u) {
   if (!u) return null
-  const identity = { id: u.id, name: u.name, role: normalizeRole(u.role) }
+  const identity = makeIdentity(u)
   wx.setStorageSync('lab_identity', identity)
   syncGlobal()
   return identity
@@ -94,14 +109,41 @@ function syncGlobal() {
   const role = i ? normalizeRole(i.role) : 'student'
   // 顺手把 storage 里的角色写法校正掉（'Teacher'/'教师' → 'teacher'），下次冷启动不必再修
   if (i && i.role !== role) {
-    const fixed = { id: i.id, name: i.name, role }
+    const fixed = { id: i.id, name: i.name, role, cls: i.cls || '', managedClasses: i.managedClasses || '' }
     wx.setStorageSync('lab_identity', fixed)
     app.globalData.identity = fixed
   } else {
     app.globalData.identity = i
   }
   app.globalData.role = role
-  app.globalData.me = i ? { id: i.id, name: i.name, role } : { id: '', name: '', role: 'student' }
+  app.globalData.me = i
+    ? { id: i.id, name: i.name, role, cls: i.cls || '', managedClasses: i.managedClasses || '' }
+    : { id: '', name: '', role: 'student', cls: '', managedClasses: '' }
+}
+
+// 刷新本人身份：登录时缓存的身份可能过期 ——
+//   ① 本次升级前登录过的老师，缓存里没有 managedClasses（带班班级）；
+//   ② 管理员调整过某位老师的带班后，该老师手机上的缓存仍是旧的。
+// 前端「教师管理本班学生」要靠 managedClasses 限定归属班级，过期会导致
+// 老师看到「尚未配置带班班级」或选到已不在带的班，故在需要时回源取一次。
+async function refresh() {
+  try {
+    const api = require('./api.js')
+    const u = await api.call('whoami', {})
+    if (u && u.id) {
+      loginWithUser(u)
+      return current()
+    }
+  } catch (e) { /* 云端不可用 → 沿用缓存身份 */ }
+  return current()
+}
+
+// 本人带班班级列表：教师管理学生账号时用来限定「归属班级」的可选项。
+// 与后端 ds.scope.classes 同源（同一个 managedClasses 字段、同样的分隔符规则）。
+function managedClassesList() {
+  const i = current()
+  const raw = (i && i.managedClasses) || ''
+  return String(raw).split(/[,，;；\s]+/).map(s => s.trim()).filter(Boolean)
 }
 
 // 是否教师/管理员：以持久化身份为准，并顺手把 globalData 对齐，
@@ -132,4 +174,4 @@ function roleText(role) {
   return r === 'teacher' ? '教师' : r === 'admin' ? '管理员' : r === 'super' ? '超级管理员' : '学生'
 }
 
-module.exports = { current, lookup, login, loginWithUser, logout, switchAccount, syncGlobal, isStaff, isAdmin, isSuper, roleText, normalizeRole }
+module.exports = { current, lookup, login, loginWithUser, logout, switchAccount, syncGlobal, isStaff, isAdmin, isSuper, roleText, normalizeRole, managedClassesList, refresh }

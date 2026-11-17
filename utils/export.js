@@ -72,4 +72,58 @@ async function run(kind, viaShare, title) {
   }
 }
 
-module.exports = { run, copy, share, fetchCsv }
+// 本地组装 CSV（用于「统计页」这类没有后端 exportData 分支的数据：
+// 报表是前端聚合出来的，后端 exportData 只认 materials/tools/stock_io/requisitions/borrow/access/logs 七张表，
+// 而统计页要导出的是「概览 + 排行 + 趋势 + 按班级分布」这种多段结构，只能在前端拼）。
+// 与后端 csvCell/csvLines 保持同一套转义规则，并同样加 BOM，
+// 否则 Excel 打开中文会乱码（用户粘到 Excel 交给教务核对，乱码等于不可用）。
+function csvCell(v) {
+  let s = (v === null || v === undefined) ? '' : '' + v
+  // CSV 公式注入防护：以 = + - @ 开头（含前导空白）的单元格会被 Excel/WPS 当成公式执行，
+  //   清单里若被塞进 =HYPERLINK(...) 之类，打开导出的 CSV 就会触发钓鱼；
+  //   同时合法值（「+5V模块」「-40℃环境」）也会被 Excel 显示成 #NAME?。
+  // 前置单引号 → Excel 按文本处理，粘贴后仍显示原值；导入侧 unguardFormula 会还原。
+  if (/^[\s]*[=+\-@]/.test(s)) s = "'" + s
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+}
+function csvLines(header, rows) {
+  return [header.map(csvCell).join(',')].concat(rows.map(r => r.map(csvCell).join(','))).join('\r\n')
+}
+
+// sections: [{ title, header: [...], rows: [[...]] }]
+// 同一张表里用「空行 + 段标题」分隔，Excel 打开后一眼能看清分段。
+function buildCsv(sections, filename) {
+  const out = []
+  sections.forEach((sec, i) => {
+    if (i > 0) out.push('')
+    if (sec.title) out.push(csvCell(sec.title))
+    out.push(csvLines(sec.header || [], sec.rows || []))
+  })
+  return { filename: filename || '导出.csv', csv: '\uFEFF' + out.join('\r\n') }
+}
+
+// 本地导出（不落云端）：只做剪贴板交付，交互与 run() 一致
+async function runLocal(sections, filename, title) {
+  wx.showLoading({ title: title || '导出中…', mask: true })
+  try {
+    const { filename: fn, csv } = buildCsv(sections, filename)
+    await new Promise((res, rej) => wx.setClipboardData({ data: csv, success: res, fail: rej }))
+    wx.hideLoading()
+    const demo = api.isDemoData()
+    wx.showModal({
+      title: (demo ? '导出成功（演示数据）' : '导出成功'),
+      content: (demo ? '【演示模式】本次导出来自演示数据，不是真实云端台账，请勿直接用于上报核对。\n\n' : '') +
+        '内容已复制到剪贴板，打开电脑上的 Excel / WPS 表格粘贴即可。文件名：' + fn,
+      showCancel: false,
+      confirmText: '知道了'
+    })
+    return { filename: fn, count: 1, via: 'clipboard', demo }
+  } catch (e) {
+    wx.hideLoading()
+    const msg = e && e.errMsg && /auth deny|permission/.test(e.errMsg) ? '需要允许粘贴板权限' : (e.message || '导出失败')
+    wx.showModal({ title: '导出失败', content: msg, showCancel: false, confirmText: '知道了' })
+    throw e
+  }
+}
+
+module.exports = { run, copy, share, fetchCsv, buildCsv, runLocal }

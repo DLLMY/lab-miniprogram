@@ -19,11 +19,20 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 /* 有吸底操作条的页面（detail）用这个，留出底部空间 */
 .page-has-bar { padding: 28rpx 28rpx 160rpx; }
 .page-flush { padding: 0 0 60rpx; }
-.row { display: flex; align-items: center; }
-.row-between { display: flex; align-items: center; justify-content: space-between; }
+/* flex 行允许换行：空间不足时让按钮换到下一行，而不是把按钮压扁到
+   「背景比文字还窄」→ 文字溢出胶囊（截图里「按位置分组」即此症状）。
+   空间充足时行为与原来完全一致。 */
+.row { display: flex; align-items: center; flex-wrap: wrap; }
+.row-between { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .grow { flex: 1; min-width: 0; }
 .list-nm { font-weight: 600; font-size: 29rpx; color: #0D1526; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-sub { font-size: 23rpx; color: #8A99AF; margin-top: 6rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 班级全称：不得截断。.list-sub 的 nowrap+ellipsis 会把「2025级电气（3+4）班」压成缩略，
+   班级名是识别申请归属的唯一依据，必须完整可见（可换行，不溢出）。 */
+.cls-line {
+  font-size: 23rpx; color: #8A99AF; margin-top: 6rpx;
+  white-space: normal; word-break: break-all; overflow: visible;
+}
 .mt-s { margin-top: 16rpx; }
 .mt-m { margin-top: 24rpx; }
 .mt-l { margin-top: 36rpx; }
@@ -131,7 +140,8 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 }
 .kv:last-child { border-bottom: none; }
 .kv-k { color: #6B7C96; flex-shrink: 0; margin-right: 24rpx; }
-.kv-v { color: #0D1526; font-weight: 600; text-align: right; word-break: break-all; }
+/* 右侧值列：班级全称可能很长（含全角括号），允许换行且不被压缩截断 */
+.kv-v { color: #0D1526; font-weight: 600; text-align: right; word-break: break-all; white-space: normal; flex: 1; min-width: 0; }
 
 /* ---------- 统计瓦片 ---------- */
 .tiles { display: flex; margin: 0 -10rpx; }
@@ -173,6 +183,7 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
   border: 1rpx solid rgba(15, 35, 80, .045);
   display: flex;
   align-items: center;
+  position: relative;
 }
 .grid-ic {
   width: 84rpx; height: 84rpx;
@@ -185,6 +196,22 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 .grid-ic image { width: 44rpx; height: 44rpx; }
 .grid-t { font-size: 29rpx; font-weight: 600; color: #0D1526; white-space: nowrap; }
 .grid-s { font-size: 22rpx; color: #8A99AF; margin-top: 6rpx; white-space: nowrap; }
+/* 入口角标：学生端「我的申请」待审批数。贴在图标右上角，不与标题文字争空间。
+   .grid-ic 自带 margin-right:20rpx，这里不再重复加间距。 */
+.grid-ic-wrap { position: relative; flex-shrink: 0; }
+.grid-badge {
+  position: absolute;
+  top: -8rpx; right: -10rpx;
+  min-width: 32rpx; height: 32rpx;
+  padding: 0 7rpx;
+  border-radius: 16rpx;
+  background: #E5484D;
+  color: #FFFFFF;
+  font-size: 20rpx; font-weight: 600;
+  line-height: 32rpx;
+  text-align: center;
+  border: 2rpx solid #FFFFFF;
+}
 
 /* ---------- 列表项 ---------- */
 .list-item {
@@ -267,6 +294,16 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
   font-size: 30rpx;
   font-weight: 600;
   border: none;
+  /* 水平内边距：此前 .btn 完全没有 padding → 按钮文案直接贴住边框，
+     截图里「导出领用单 CSV」的 V 被右边框切掉。box-sizing 保证 padding 不撑破固定高度。 */
+  padding: 0 28rpx;
+  box-sizing: border-box;
+  /* 按钮文案不折行：文案被挤到第二行时按钮高度不变、文字却溢出按钮。 */
+  white-space: nowrap;
+  /* 在 flex 行里不被压扁：被压扁时背景比文字窄 → 文字溢出胶囊。 */
+  flex-shrink: 0;
+  /* 行高交给 flex 居中，避免继承来的 line-height 把行盒撑出按钮。 */
+  line-height: 1.25;
 }
 .btn::after { border: none; }
 .btn-primary {
@@ -294,7 +331,20 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
   color: #FFFFFF;
 }
 .btn-danger { background: rgba(239, 68, 68, .10); color: #DC2626; }
-.btn-sm { height: 72rpx; font-size: 27rpx; border-radius: 20rpx; }
+/* 小按钮（72rpx）。历史上只声明了 height/font-size/border-radius，
+   缺 display:flex / line-height / padding / flex-shrink → 单独使用（不带 .btn）时
+   出现三类可见异常：文字贴边、文字不垂直居中、在 flex 行里被压扁导致文字溢出胶囊。
+   这里补全盒模型，并显式声明 height/line-height，
+   避免被任何裸类名覆盖后行盒越界（旧的裸 .primary 会把 line-height 顶成 92rpx）。 */
+.btn-sm {
+  display: flex; align-items: center; justify-content: center;
+  height: 72rpx; font-size: 27rpx; border-radius: 20rpx;
+  padding: 0 22rpx; box-sizing: border-box;
+  white-space: nowrap; flex-shrink: 0; line-height: 1.25;
+}
+.btn-sm.primary { background: rgba(43, 108, 255, .12); color: #2B6CFF; height: 72rpx; line-height: 1.25; }
+.btn-sm.off { background: #F1F5F9; color: #94A3B8; }
+.btn-sm.reject { background: rgba(239, 68, 68, .10); color: #DC2626; }
 .btn-block { width: 100%; }
 .btn-row { display: flex; margin: 0 -8rpx; }
 .btn-row > .btn-cell { flex: 1; margin: 0 8rpx; }
@@ -302,8 +352,11 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 /* 兼容别名 */
 .go { background: linear-gradient(135deg, #2B6CFF 0%, #1D4FD8 100%); color: #fff; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
 .go::after { border: none; }
-.primary { background: linear-gradient(135deg, #2B6CFF 0%, #1D4FD8 100%); color: #fff; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
-.primary::after { border: none; }
+/* 注：裸 .primary 已删除。
+   它与 .btn-sm.primary 同名共存，且定义在 .btn-sm 之后 → 同特异性下后者胜 →
+   .btn-sm 的 height/font-size/border-radius 与 line-height 全被覆盖成 92rpx 实心蓝，
+   小按钮被撑高、行盒越界 → 按钮文字错位（截图里的现象）。
+   组合语义一律写 .btn-sm.primary（小按钮）或 .btn-primary（大按钮），不再留裸类名。 */
 /* 注意：这里原来是裸 .ok，会污染 .pill.ok / .dist-n.ok（胶囊被撑成 92rpx 高、文字错位），
    且无任何按钮使用裸 ok 类，故改名为 .btn-ok 以隔离命名空间。 */
 .btn-ok { background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #fff; border-radius: 24rpx; font-size: 30rpx; font-weight: 600; height: 92rpx; line-height: 92rpx; text-align: center; }
@@ -412,6 +465,14 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 .bar-in.warn { background: linear-gradient(90deg, #F59E0B 0%, #FBBF24 100%); }
 .bar-in.red { background: linear-gradient(90deg, #EF4444 0%, #F87171 100%); }
 
+/* ---------- 右侧数量块（库存页 / 统计页共用） ----------
+   原先只定义在 pages/inventory/inventory.wxss，而统计页 WXSS 按页隔离 →
+   usage.wxml 里的 iv-qty 完全没有样式，低库存数量显示成裸文本。已提到全局。 */
+.iv-qty { text-align: right; flex-shrink: 0; margin-left: 16rpx; }
+.iv-qn { font-size: 36rpx; font-weight: 700; color: #0D1526; line-height: 1.1; }
+.iv-qu { font-size: 21rpx; color: #8A99AF; margin-top: 4rpx; }
+.iv-qty.low .iv-qn { color: #DC2626; }
+
 /* ---------- 权限拦截 ---------- */
 .guard {
   text-align: center;
@@ -433,3 +494,242 @@ view, text, button, input, scroll-view { box-sizing: border-box; }
 }
 .row .btn-s.pass { background: linear-gradient(135deg, #10B981 0%, #059669 100%); }
 .row .btn-s.reject { background: linear-gradient(135deg, #F87171 0%, #DC2626 100%); }
+
+/* ============================================================
+   全局公共组件（从各页 WXSS 归集到这里）
+   背景：WXSS 按页隔离，此前 mask/sheet 只定义在用户管理页，
+         报修、巡检、实训室三页的弹层完全没有遮罩和面板样式；
+         inp-ph / dt-* / mb-m 等也是「在某一页有、在别的页没有」，
+         导致备份页、二维码打印页顶部标题区裸奔。统一到全局只留一份。
+   ============================================================ */
+
+
+/* 底部弹层（遮罩 + 面板）：原先只有用户管理页有定义，报修/巡检/实训室三页的弹层完全无样式 */
+.mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 16, 32, .45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 50;
+}
+.sheet {
+  width: 100%;
+  background: #FFFFFF;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 36rpx 32rpx;
+  padding-bottom: calc(36rpx + env(safe-area-inset-bottom));
+}
+
+/* 申请弹层（详情/审批/领用记录/首页共用） */
+.ap-mask {
+  position: fixed;
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(9, 20, 45, .45);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+}
+.ap-panel {
+  width: 100%;
+  background: #FFFFFF;
+  border-radius: 36rpx 36rpx 0 0;
+  padding: 36rpx 32rpx calc(36rpx + env(safe-area-inset-bottom));
+}
+.ap-head { display: flex; align-items: center; margin-bottom: 10rpx; }
+.ap-title { flex: 1; font-size: 34rpx; font-weight: 700; color: #0F2350; }
+.ap-close {
+  width: 56rpx; height: 56rpx;
+  display: flex; align-items: center; justify-content: center;
+  background: #F1F5F9; border-radius: 50%;
+}
+.ap-sub { font-size: 24rpx; color: #94A3B8; margin-bottom: 32rpx; }
+.ap-star { color: #DC2626; }
+.ap-tags { display: flex; flex-wrap: wrap; margin: 0 -8rpx 18rpx; }
+.ap-tag {
+  margin: 0 8rpx 14rpx;
+  padding: 12rpx 22rpx;
+  font-size: 24rpx;
+  color: #5A6B85;
+  background: #F1F5F9;
+  border-radius: 999rpx;
+}
+.ap-tip { font-size: 22rpx; color: #94A3B8; line-height: 1.6; margin: -6rpx 0 18rpx; }
+
+/* 详情页顶部标题区（详情/库存盘点/备份/二维码打印共用） */
+.dt-hero { padding: 40rpx 32rpx 44rpx; }
+.dt-top { display: flex; align-items: center; }
+.dt-ic {
+  width: 112rpx; height: 112rpx;
+  border-radius: 34rpx;
+  margin-right: 26rpx;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .10);
+  border: 1rpx solid rgba(255, 255, 255, .16);
+  flex-shrink: 0;
+}
+.dt-name {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 14rpx;
+  letter-spacing: 1rpx;
+}
+.dt-id {
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, .48);
+  margin-top: 8rpx;
+  letter-spacing: 1rpx;
+}
+.dt-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 92rpx;
+  gap: 12rpx;
+}
+
+/* 输入框占位符 */
+/* 输入框占位符（浅色输入框）：必须是深灰。
+   旧值 rgba(255,255,255,.30) 是给深色底（登录页）设计的，却被 19 个浅色输入框
+   （.inp / .flt-i / .qty-inp）引用 → 白底上几乎隐形，用户看到的是「空输入框」。 */
+.inp-ph { color: #A3AFC2; }
+/* 深色底输入框（登录页）的占位符 */
+.inp-ph-light { color: rgba(255, 255, 255, .62); }
+
+/* 搜索框占位符 */
+.search-ph { color: #A3AFC2; }
+
+/* 表单说明文字 */
+.field-tip { font-size: 22rpx; color: #8A99AF; line-height: 1.5; margin-top: 10rpx; }
+
+/* 间距工具 */
+.mb-m { margin-bottom: 24rpx; }
+
+.ap-close image { width: 26rpx; height: 26rpx; opacity: .55; }
+.dt-ic image { width: 56rpx; height: 56rpx; }
+.dt-hint image { width: 32rpx; height: 32rpx; opacity: .6; }
+.dt-hint text { font-size: 25rpx; color: #94A3B8; }
+
+/* ---------- 危险 / 临期提示色（库存、我的、详情三页共用） ----------
+   此前只定义在 inventory.wxss 与 mine.wxss，详情页的效期行（已过期/临期）因此完全没样式 */
+.list-warn { color: #DC2626; font-weight: 600; }
+.list-soon { color: #D97706; font-weight: 600; }
+
+/* ---------- 驳回原因（领用记录页与备份页共用）---------- */
+.clm-reject {
+  font-size: 23rpx; color: #C2333A; margin-top: 8rpx;
+  white-space: normal; word-break: break-all; overflow: visible; line-height: 1.6;
+}
+
+/* ---------- 数量步进器（详情申请 / 出入库 / 盘点 / 审批借期 共用）----------
+   此前只定义在各页 wxss（WXSS 按页隔离），审批页一用它就没有样式。
+   io 页保留自己的白色按钮样式（浅灰轨道上的白按钮是刻意设计），属有意覆盖。 */
+.qty { display: flex; align-items: center; }
+.qty-btn {
+  width: 76rpx; height: 76rpx; border-radius: 22rpx; background: #F1F5F9;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.qty-btn image { width: 30rpx; height: 30rpx; }
+.qty-inp {
+  flex: 1; height: 76rpx; margin: 0 16rpx; text-align: center;
+  font-size: 34rpx; font-weight: 600; color: #0F2350;
+}
+
+/* ---------- 筛选条（领用记录 / 出入库 / 操作日志 三页共用）----------
+   此前这三页各存一份逐字相同的副本：改一处漏两页 → 同款筛选条在不同页外观不一致。
+   归集到全局后改一处全站生效。 */
+.flt { display: flex; align-items: center; gap: 12rpx; }
+.flt-i {
+  flex: 1; min-width: 0;
+  height: 68rpx; padding: 0 20rpx;
+  font-size: 25rpx; color: #0F2350;
+  background: #F8FAFC; border-radius: 18rpx;
+}
+.flt-p {
+  flex: 1; min-width: 0;
+  height: 68rpx; line-height: 68rpx;
+  padding: 0 18rpx;
+  font-size: 25rpx; color: #5A6B85;
+  background: #F8FAFC; border-radius: 18rpx;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.flt-btn {
+  flex-shrink: 0;
+  height: 68rpx; line-height: 68rpx; padding: 0 22rpx;
+  font-size: 24rpx; color: #2B6CFF;
+  background: rgba(43, 108, 255, .10); border-radius: 18rpx;
+}
+
+/* ---------- 上拉加载更多（领用记录 / 出入库 / 操作日志 共用）---------- */
+.more { padding: 26rpx 0; text-align: center; font-size: 25rpx; color: #2B6CFF; }
+.more.busy { color: #94A3B8; }
+.more.end { color: #B4BFCE; }
+
+/* ---------- 搜索建议下拉（首页 / 库存页 共用）----------
+   首页用「工/耗」文字图标、库存页用图片图标 → 合并后两页都能正确显示各自的内容。 */
+.search-wrap { position: relative; }
+.suggest-mask { position: fixed; inset: 0; z-index: 40; }
+.suggest {
+  position: absolute; top: calc(100% + 12rpx); left: 0; right: 0; z-index: 50;
+  background: #FFFFFF; border-radius: 22rpx; overflow: hidden;
+  box-shadow: 0 16rpx 48rpx rgba(20, 33, 61, .16);
+  max-height: 62vh; overflow-y: auto;
+}
+.suggest-empty { padding: 36rpx 28rpx; text-align: center; color: #8A95A8; font-size: 26rpx; }
+.suggest-item {
+  display: flex; align-items: center; padding: 22rpx 26rpx;
+  border-bottom: 1rpx solid #F0F2F6;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-ic {
+  width: 56rpx; height: 56rpx; border-radius: 16rpx; flex-shrink: 0; margin-right: 20rpx;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24rpx; font-weight: 700; color: #fff;
+}
+.suggest-ic image { width: 30rpx; height: 30rpx; }
+.suggest-ic.mat { background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%); }
+.suggest-ic.tool { background: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%); }
+.suggest-nm { font-size: 28rpx; color: #1A2238; font-weight: 600; }
+.suggest-sub { font-size: 22rpx; color: #8A95A8; margin-top: 4rpx; }
+.suggest-tag {
+  flex-shrink: 0; margin-left: 16rpx; font-size: 22rpx; color: #6B7688;
+  padding: 4rpx 14rpx; border-radius: 12rpx; background: #F3F5F9;
+}
+
+/* ---------- 卡片内小标题（数据备份 / 二维码打印 两页共用）---------- */
+.card-t { font-size: 28rpx; font-weight: 700; color: #0F2350; margin-bottom: 18rpx; }
+
+/* ---------- 大统计头（领用记录 / 操作日志 两页共用）---------- */
+.lg-hero { padding: 40rpx 32rpx 44rpx; }
+.lg-total { display: flex; align-items: baseline; margin-top: 26rpx; }
+.lg-n { font-size: 60rpx; font-weight: 700; color: #FFFFFF; line-height: 1; }
+.lg-l { font-size: 24rpx; color: rgba(255, 255, 255, .55); margin-left: 16rpx; }
+.lg-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #F0F2F6;
+}
+.lg-row:last-child { border-bottom: none; }
+.lg-row.tap:active { background: #F8FAFC; }
+
+/* ---------- 列表内联操作胶囊（出入库 / 我的 两页共用）---------- */
+.list-act {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 8rpx 24rpx;
+  font-size: 22rpx;
+  color: #5A6B85;
+  background: #F1F5F9;
+  border-radius: 999rpx;
+}
+
+/* ---------- 分段切换（工具分段 / 交付分段共用）----------
+   此前只定义在 qrprint.wxss（WXSS 按页隔离）→ 交付页用同一个 class 时完全没样式。 */
+.tabs { display: flex; border-bottom: 2rpx solid #EEF2F7; }
+.tab {
+  flex: 1; text-align: center; padding: 20rpx 0; font-size: 28rpx; color: #64748B;
+  border-bottom: 4rpx solid transparent;
+}
+.tab.on { color: #2B6CFF; font-weight: 700; border-bottom-color: #2B6CFF; }
