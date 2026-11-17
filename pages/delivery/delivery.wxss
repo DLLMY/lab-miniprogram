@@ -1,0 +1,2 @@
+/* 物品交付单页：复用全局卡片/列表样式，仅本页特有微调 */
+.dl-time { font-size: 23rpx; color: #8A99AF; margin-top: 6rpx; }

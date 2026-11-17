@@ -1,0 +1,70 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">教师 / 管理员可查看待交付清单<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+  </view>
+
+  <block wx:else>
+    <view class="hero dt-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-tag">实物发放</view>
+        <view class="dt-name">物品交付单</view>
+        <view class="dt-id">审批通过 → 照单把耗材 / 工具交到学生手上</view>
+      </view>
+    </view>
+
+    <view class="page">
+      <view class="card">
+        <view class="tabs">
+          <view class="tab {{tab==='pending'?'on':''}}" data-t="pending" bindtap="onTab">待交付</view>
+          <view class="tab {{tab==='delivered'?'on':''}}" data-t="delivered" bindtap="onTab">已交付</view>
+        </view>
+        <view class="row-between mt-s">
+          <view class="list-sub">共 {{total}} 单</view>
+          <view class="btn-sm off" bindtap="toggleAllDays">{{allDays ? '仅看近 30 天' : '显示全部历史'}}</view>
+        </view>
+        <view class="tip">审批通过时库存已扣减；这里只确认「实物已交到学生手上」，不重复动账。</view>
+      </view>
+
+      <view wx:if="{{loadErr}}" class="card mt-m">
+        <view class="empty"><view>清单加载失败</view><view class="tip">请下拉刷新重试；若持续失败请到「我的 → 系统自检」查看云端状态</view></view>
+      </view>
+
+      <view wx:if="{{!rows.length && !loadErr}}" class="card mt-m">
+        <view class="empty">
+          <view>{{tab === 'pending' ? '没有待交付的单据' : '还没有已交付记录'}}</view>
+          <view class="tip">{{tab === 'pending' ? '学生提交申请、老师审批通过后，单子会出现在这里。' : '在「待交付」里点「确认交付」后，单子会移到这一段。'}}</view>
+        </view>
+      </view>
+
+      <view wx:for="{{rows}}" wx:key="no" class="card card-tight mt-m">
+        <view class="row-between">
+          <view class="row">
+            <text class="list-nm">{{item.itemName || item.matId || item.toolId}}</text>
+            <text class="pill {{item.kind === 'tool' ? 'blue' : 'ok'}}">{{item.kind === 'tool' ? '工具借出' : '耗材领用'}}</text>
+          </view>
+          <text class="list-sub">{{item.no}}</text>
+        </view>
+
+        <view class="list-sub" wx:if="{{item.kind === 'tool'}}">借期 {{item.days || 7}} 天 · 应还 {{item.plan || '—'}}</view>
+        <view class="list-sub" wx:else>数量 {{item.qty}} {{item.unit || ''}}</view>
+
+        <view class="list-sub">领用人：{{item.userName || item.user}}{{item.userCls ? (' · ' + item.userCls) : ''}}</view>
+        <view class="list-sub" wx:if="{{item.reason}}">用途：{{item.reason}}</view>
+        <view class="list-sub">申请时间：{{item.time || '—'}}</view>
+        <view class="list-sub" wx:if="{{item.delivered}}">交付时间：{{item.delivered}}</view>
+
+        <view wx:if="{{tab === 'pending'}}" class="btn-row mt-m">
+          <view class="btn-cell">
+            <button class="btn btn-primary btn-block" disabled="{{busy}}" data-no="{{item.no}}" bindtap="confirm">确认交付</button>
+          </view>
+        </view>
+      </view>
+
+      <view class="tip">交付确认只留痕、不重复扣减库存；如需撤销已通过的申请，请到「领用记录」页由管理员撤销审批。</view>
+    </view>
+  </block>
+</view>

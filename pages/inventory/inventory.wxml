@@ -24,6 +24,7 @@
   </view>
 
   <view class="page">
+    <view wx:if="{{loadErr}}" style="color:#DC2626;padding:12rpx 4rpx;font-size:24rpx;">数据加载失败，请下拉刷新重试</view>
     <!-- 分段切换 -->
     <view class="seg">
       <view class="seg-i {{tab==='mat'?'on on-cyan':''}}" bindtap="setTab" data-t="mat">耗材</view>
@@ -38,7 +39,7 @@
       </view>
       <!-- 实时下拉建议：全库模糊匹配，点选直达详情（不受当前分段限制） -->
       <view wx:if="{{showSuggest && suggest.length}}" class="suggest">
-        <view wx:for="{{suggest}}" wx:key="key" class="suggest-item" data-id="{{item.id}}" bindtap="pickSuggest">
+        <view wx:for="{{suggest}}" wx:key="key" class="suggest-item" data-id="{{item.id}}" data-type="{{item.type}}" bindtap="pickSuggest">
           <view class="suggest-ic {{item.type === 'tool' ? 'tool' : 'mat'}}">
             <image src="{{item.type === 'tool' ? '/images/ic-tool-s.png' : '/images/ic-box-s.png'}}" mode="aspectFit"></image>
           </view>
@@ -59,6 +60,35 @@
       </view>
       <view class="btn-cell">
         <button class="btn btn-ghost btn-block" bindtap="exportList">{{tab==='tool' ? '导出工具台账' : '导出库存清单'}}</button>
+      </view>
+    </view>
+
+    <!-- 补货闭环：预警 → 一键入库（复用 batchIo）。仅耗材有库存概念，工具分段不显示 -->
+    <view wx:if="{{isStaff && tab==='mat' && lowCount>0}}" class="btn-row" style="margin-top:12rpx">
+      <view class="btn-cell">
+        <button class="btn btn-primary btn-block" bindtap="openReplenish">补货入库（{{lowCount}} 项待补）</button>
+      </view>
+    </view>
+
+    <view wx:if="{{isAdmin}}" class="btn-row" style="margin-top:12rpx">
+      <view class="btn-cell">
+        <button class="btn btn-ghost btn-block" bindtap="openImport">批量建档导入</button>
+      </view>
+    </view>
+
+    <!-- 工具操作：借出 / 新建工具（此前只有批量导入一个建档入口，借出藏在详情页 → 找不到入口） -->
+    <view wx:if="{{isStaff && tab==='tool'}}" class="btn-row" style="margin-top:12rpx">
+      <view class="btn-cell">
+        <button class="btn btn-primary btn-block" bindtap="openLend">借出工具</button>
+      </view>
+      <view class="btn-cell">
+        <button class="btn btn-ghost btn-block" bindtap="openNewTool">＋ 新建工具</button>
+      </view>
+    </view>
+    <!-- 工具的「入库」= 扫码建档（耗材才用数量出入库） -->
+    <view wx:if="{{isStaff && tab==='tool'}}" class="btn-row" style="margin-top:12rpx">
+      <view class="btn-cell">
+        <button class="btn btn-ghost btn-block" bindtap="scanTool">扫码登记工具</button>
       </view>
     </view>
 
@@ -105,11 +135,130 @@
             <view class="list-sub">编号 {{item.sn}}</view>
             <view class="list-sub" wx:if="{{item.borrower}}">借用人：{{item.borrower}}</view>
           </view>
-          <text class="pill {{item.status==='在库'?'ok':item.status==='借出'?'blue':'red'}}">{{item.status}}</text>
+          <!-- 行内操作：不用进详情页就能借出 / 归还（catchtap 阻止冒泡到 goDetail） -->
+          <view class="col-end">
+            <text class="pill {{item.status==='在库'?'ok':item.status==='借出'?'blue':'red'}}">{{item.status}}</text>
+            <view wx:if="{{isStaff && item.status==='在库'}}" class="btn-sm primary mt-s" catchtap="openLend" data-id="{{item.id}}">借出</view>
+            <view wx:elif="{{isStaff && item.status==='借出'}}" class="btn-sm off mt-s" catchtap="doReturn" data-id="{{item.id}}">归还</view>
+          </view>
         </view>
       </block>
     </view>
 
     <view class="tip">数据来源：{{srcText}}</view>
+  </view>
+</view>
+
+<!-- 批量建档：后端 importMaterials/importTools 早已实现，此处补上用户入口 -->
+<view wx:if="{{showImport}}" class="iv-mask" bindtap="closeImport">
+  <view class="iv-sheet" catchtap="noop">
+    <view class="row-between mb-m">
+      <view class="sec-t">批量建档 · {{tab === 'tool' ? '工具' : '耗材'}}</view>
+      <view class="iv-close" bindtap="closeImport">✕</view>
+    </view>
+    <view class="field-tip">{{importHint}}</view>
+    <textarea class="iv-area" placeholder="粘贴清单，每行一件（可直接从 Excel 复制）" value="{{importText}}" bindinput="onImportText" maxlength="-1" />
+    <view class="field-tip">同编号或同名称会覆盖更新并留流水；导入前建议先导出当前台账备份。</view>
+    <button class="btn btn-primary btn-block mt-m" loading="{{importBusy}}" bindtap="submitImport">开始导入</button>
+  </view>
+</view>
+
+<!-- 低库存补货入库：勾选缺货项 → 填数量 → 一次批量入库并生成流水 -->
+<view wx:if="{{showReplenish}}" class="iv-mask" bindtap="closeReplenish">
+  <view class="iv-sheet" catchtap="noop">
+    <view class="row-between mb-m">
+      <view class="sec-t">补货入库</view>
+      <view class="iv-close" bindtap="closeReplenish">✕</view>
+    </view>
+    <view class="field-tip">默认按「补到安全线」预填数量，可逐项调整。提交后会自动生成入库流水，库存与账面同步。</view>
+    <view wx:if="{{!replenishRows.length}}" class="field-tip">没有需要补货的耗材。</view>
+    <view wx:for="{{replenishRows}}" wx:key="key" class="rp-row" data-key="{{item.key}}" bindtap="toggleReplenish">
+      <view class="ck {{item.checked ? 'on' : ''}}"></view>
+      <view class="grow">
+        <view class="list-nm">{{item.name}}</view>
+        <view class="list-sub">{{item.id}} · 现有 {{item.stock}} / 下限 {{item.safe}}</view>
+      </view>
+      <view class="rp-qty">
+        <input class="rp-inp" type="number" value="{{item.qty}}" data-key="{{item.key}}" bindinput="onReplenishQty" catchtap="noop" />
+        <view class="list-sub">{{item.unit}}</view>
+      </view>
+    </view>
+    <view class="field" style="margin-top:16rpx">
+      <view class="field-l">入库备注</view>
+      <input class="inp" value="{{replenishNote}}" placeholder="选填，如：11月采购到货验收" bindinput="onReplenishNote" />
+    </view>
+    <button class="btn btn-primary btn-block mt-m" loading="{{replenishBusy}}" bindtap="submitReplenish">确认入库</button>
+  </view>
+</view>
+
+<!-- ===== 新建工具弹层（管理员，单件建档）===== -->
+<view wx:if="{{showNewTool}}" class="iv-mask" bindtap="closeNewTool">
+  <view class="iv-sheet" catchtap="noop">
+    <view class="row-between mb-m">
+      <view class="sec-t">新建工具</view>
+      <view class="iv-close" bindtap="closeNewTool">✕</view>
+    </view>
+    <view class="field-tip">工具一件一码、没有库存数量。编号留空由系统自动生成（形如 T101）。</view>
+    <view class="field">
+      <view class="field-l">工具名称 <text class="ap-star">*</text></view>
+      <input class="inp" value="{{toolForm.name}}" placeholder="如：万用表" placeholder-class="inp-ph" bindinput="toolNameInput" />
+    </view>
+    <view class="field">
+      <view class="field-l">工具编号</view>
+      <input class="inp" value="{{toolForm.id}}" placeholder="选填，留空自动生成" placeholder-class="inp-ph" bindinput="toolIdInput" />
+    </view>
+    <view class="field">
+      <view class="field-l">规格</view>
+      <input class="inp" value="{{toolForm.spec}}" placeholder="如：VC830L" placeholder-class="inp-ph" bindinput="toolSpecInput" />
+    </view>
+    <view class="field">
+      <view class="field-l">存放位置</view>
+      <input class="inp" value="{{toolForm.loc}}" placeholder="如：A柜1层" placeholder-class="inp-ph" bindinput="toolLocInput" />
+    </view>
+    <button class="btn btn-primary btn-block mt-m" loading="{{newToolBusy}}" bindtap="submitNewTool">确认建档</button>
+  </view>
+</view>
+
+<!-- ===== 工具借出弹层（教师/管理员）===== -->
+<view wx:if="{{showLend}}" class="iv-mask" bindtap="closeLend">
+  <view class="iv-sheet" catchtap="noop">
+    <view class="row-between mb-m">
+      <view class="sec-t">借出工具</view>
+      <view class="iv-close" bindtap="closeLend">✕</view>
+    </view>
+    <view class="field">
+      <view class="field-l">选择工具 <text class="ap-star">*</text></view>
+      <picker mode="selector" range="{{lendToolOptions}}" bindchange="onLendTool">
+        <view class="flt-p">{{lendToolName ? (lendToolName + '（' + lendToolId + '）') : '请选择要借出的工具'}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <view class="field-l">借用工号 <text class="ap-star">*</text></view>
+      <input class="inp" value="{{lendBorrower}}" placeholder="输入借用人本人完整工号" placeholder-class="inp-ph" bindinput="lendBorrowerInput" />
+      <view class="ap-tags">
+        <view wx:for="{{borrowerPresets}}" wx:key="id"
+              class="ap-tag {{lendBorrower === item.id ? 'on' : ''}}"
+              data-id="{{item.id}}" bindtap="pickBorrower">{{item.name}}（{{item.id}}）</view>
+      </view>
+      <view wx:if="{{borrowerHint}}" class="ap-tip">{{borrowerHint}}</view>
+    </view>
+    <view class="field">
+      <view class="field-l">借用天数</view>
+      <view class="qty">
+        <view class="qty-btn" bindtap="lendDayStep" data-d="-1"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+        <input class="qty-inp" type="number" value="{{lendDays}}" bindinput="lendDaysInput" />
+        <view class="qty-btn" bindtap="lendDayStep" data-d="1"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+      </view>
+      <view class="ap-tip">默认 7 天，最长 90 天；到期进入逾期提醒</view>
+    </view>
+    <view class="field">
+      <view class="field-l">借出备注</view>
+      <input class="inp" value="{{lendNote}}" placeholder="选填，如：临时借用，明天实训用" placeholder-class="inp-ph" bindinput="lendNoteInput" />
+      <view class="ap-tip">备注会记在借还记录上，归还时老师可据此核对工具用途与状态。</view>
+    </view>
+    <view class="btn-row">
+      <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeLend">取消</button></view>
+      <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitLend">确认借出</button></view>
+    </view>
   </view>
 </view>

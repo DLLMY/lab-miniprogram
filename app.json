@@ -10,13 +10,18 @@
     "pages/inventory/inventory",
     "pages/stocktake/stocktake",
     "pages/logs/logs",
+    "pages/claims/claims",
+    "pages/delivery/delivery",
+    "pages/backup/backup",
+    "pages/qrprint/qrprint",
     "pages/admin-users/admin-users",
     "pages/labs/labs",
     "pages/repair/repair",
-    "pages/inspection/inspection"
+    "pages/inspection/inspection",
+    "pages/privacy/privacy"
   ],
   "window": {
-    "navigationBarTitleText": "实训室管理系统",
+    "navigationBarTitleText": "阿磊的工具箱",
     "navigationBarBackgroundColor": "#0A1020",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#F2F5FA",

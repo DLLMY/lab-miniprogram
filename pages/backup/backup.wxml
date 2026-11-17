@@ -1,0 +1,49 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">仅超级管理员 / 管理员可导出全库备份<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+  </view>
+
+  <block wx:else>
+    <view class="hero dt-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-tag">Admin · 数据安全</view>
+        <view class="dt-name">数据备份</view>
+        <view class="dt-id">导出全库 11 张表的 JSON 快照</view>
+      </view>
+    </view>
+
+    <view class="page">
+      <view class="card">
+        <view class="tip" style="margin-top:0">
+          备份包含账号、耗材/工具档案、领用申请、借还、出入库流水、门禁、日志，以及实训室 / 报修 / 巡检。
+          生成后转发给「文件传输助手」，在电脑上另存即可长期归档。
+        </view>
+        <view class="kv mt-s"><text class="kv-k">数据来源</text><text class="kv-v">{{backendText}}</text></view>
+        <view wx:if="{{generatedAt}}" class="kv"><text class="kv-k">快照时间</text><text class="kv-v">{{generatedAt}}</text></view>
+        <view wx:if="{{err}}" class="clm-reject">{{err}}</view>
+        <view class="btn-row mt-m">
+          <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="load" disabled="{{busy}}">{{loaded ? '重新读取' : '读取备份数据'}}</button></view>
+          <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="download" disabled="{{!loaded || busy}}">生成备份文件</button></view>
+        </view>
+      </view>
+
+      <view wx:if="{{loaded}}" class="card mt-m">
+        <view class="card-t">快照概览（共 {{totalRows}} 条记录）</view>
+        <view wx:for="{{tables}}" wx:key="key" class="kv">
+          <text class="kv-k">{{item.label}}</text><text class="kv-v">{{item.count}} 条</text>
+        </view>
+      </view>
+
+      <view class="card mt-m">
+        <view class="card-t">重要说明</view>
+        <view class="tip" style="margin-top:0">1. 备份是只读快照，不会修改任何业务数据；恢复需由管理员在控制台按快照核对导入。</view>
+        <view class="tip">2. 备份文件含全校账号与业务数据，请妥善保管，不要转发给无关人员。</view>
+        <view class="tip">3. 演示模式下导出的是演示数据，切勿当作正式台账归档。</view>
+      </view>
+    </view>
+  </block>
+</view>

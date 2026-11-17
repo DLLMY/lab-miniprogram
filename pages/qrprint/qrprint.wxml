@@ -1,0 +1,107 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">教师 / 管理员可批量生成物品二维码标签<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+  </view>
+
+  <block wx:else>
+    <view class="hero dt-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-tag">标签打印</view>
+        <view class="dt-name">二维码批量打印</view>
+        <view class="dt-id">勾选物品 → 生成 A4 标签图 → 存相册打印</view>
+      </view>
+    </view>
+
+    <view class="page">
+      <view wx:if="{{loadErr}}" class="card">
+        <view class="empty"><view>物品清单加载失败</view><view class="tip">云端未返回真实清单，请检查网络与云函数部署状态后重试</view></view>
+      </view>
+
+      <view wx:if="{{demo}}" class="card mt-m" style="border-left:6rpx solid #F59E0B">
+        <view class="card-t" style="color:#B45309">当前为演示数据，不能打印</view>
+        <view class="tip">云端返回的是演示清单（云函数未部署或 USE_MOCK 仍为 true），并非真实台账。打印出的标签贴到真实设备上会查无此物。</view>
+      </view>
+
+      <view class="card">
+        <view class="tabs">
+          <view class="tab {{tab==='material' ? 'on' : ''}}" data-tab="material" bindtap="onTab">耗材</view>
+          <view class="tab {{tab==='tool' ? 'on' : ''}}" data-tab="tool" bindtap="onTab">工具</view>
+        </view>
+        <input class="inp mt-s" placeholder="搜索 ID / 名称 / 存放位置" placeholder-class="inp-ph" value="{{keyword}}" bindinput="onKeyword" />
+        <view class="row-between mt-s">
+          <view class="list-sub">共 {{list.length}} 项 · 已选 {{selected.length}} 项</view>
+          <view class="row">
+            <view class="btn-sm off" style="margin-right:12rpx" bindtap="onGroupToggle">{{groupByLoc ? '平铺列表' : '按位置分组'}}</view>
+            <view class="btn-sm primary" bindtap="selectAll">全选/取消</view>
+            <view class="btn-sm off" style="margin-left:12rpx" bindtap="clearSel">清空</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 按存放位置分组：贴标签时通常一次印一个柜子 -->
+      <block wx:if="{{groupByLoc}}">
+        <view wx:if="{{!locGroups.length}}" class="card">
+          <view class="empty"><view class="tip">没有符合条件的物品</view></view>
+        </view>
+        <view wx:for="{{locGroups}}" wx:key="loc" wx:for-index="gi" class="card card-tight">
+          <view class="row-between">
+            <view class="row">
+              <text class="list-nm">{{item.loc}}</text>
+              <text class="pill grey">{{item.count}} 件</text>
+            </view>
+            <view class="btn-sm {{item.allSel ? 'off' : 'primary'}}" data-gi="{{gi}}" bindtap="toggleLocGroup">{{item.allSel ? '取消本组' : '整组选中'}}</view>
+          </view>
+          <view class="list-sub">已选 {{item.selCount}} / {{item.count}}</view>
+          <view wx:for="{{item.items}}" wx:for-item="it" wx:key="key" class="qp-row" data-key="{{it.key}}" bindtap="toggleOne">
+            <view class="ck {{selected.indexOf(it.key)>=0 ? 'on' : ''}}"></view>
+            <view class="grow">
+              <view class="list-nm">{{it.name}}</view>
+              <view class="list-sub">{{it.id}} · {{it.spec || '—'}}</view>
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <block wx:else>
+      <view class="card mt-m">
+        <view wx:if="{{!list.length}}" class="empty">
+          <view class="tip">没有符合条件的物品</view>
+        </view>
+        <view wx:for="{{list}}" wx:key="key" class="qp-row" data-key="{{item.key}}" bindtap="toggleOne">
+          <view class="ck {{selected.indexOf(item.key)>=0 ? 'on' : ''}}"></view>
+          <view class="grow">
+            <view class="list-nm">{{item.name}}</view>
+            <view class="list-sub">{{item.id}} · {{item.spec || '—'}}<text wx:if="{{item.loc}}"> · {{item.loc}}</text></view>
+          </view>
+        </view>
+      </view>
+      </block>
+
+      <!-- 生成按钮放在两种视图之外，避免切到分组视图后找不到入口 -->
+      <view class="card mt-m">
+        <view class="btn-row">
+          <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="generate" disabled="{{busy || !selected.length || demo}}">{{busy ? '生成中…' : (demo ? '演示数据不可打印' : '生成二维码标签')}}</button></view>
+        </view>
+        <view class="tip">每页 15 个标签（3 列 × 5 行），内容与「扫一扫」完全兼容；生成后长按预览图或点「保存到相册」即可打印。</view>
+      </view>
+
+      <view wx:if="{{pageImages.length}}" class="card mt-m">
+        <view class="card-t">已生成 {{pageImages.length}} 页</view>
+        <view wx:for="{{pageImages}}" wx:key="index" class="qp-preview tap" data-idx="{{index}}" bindtap="preview">
+          <image src="{{item.path}}" mode="widthFix"></image>
+          <view class="list-sub">第 {{item.index}} 页 · {{item.count}} 个标签（点击预览）</view>
+        </view>
+        <view class="btn-row mt-m">
+          <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="saveAll">保存到相册</button></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 隐藏画布：仅用于离屏绘制，不占布局 -->
+    <view class="qp-canvas-wrap"><canvas canvas-id="qrBatch" class="qp-canvas"></canvas></view>
+  </block>
+</view>

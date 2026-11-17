@@ -1,0 +1,27 @@
+
+.qp-row {
+  display: flex; align-items: center; padding: 20rpx 8rpx;
+  border-bottom: 2rpx solid #F1F5F9;
+}
+.ck {
+  width: 36rpx; height: 36rpx; border: 3rpx solid #CBD5E1; border-radius: 10rpx;
+  margin-right: 20rpx; flex-shrink: 0;
+}
+.ck.on { background: #2B6CFF; border-color: #2B6CFF; position: relative; }
+.ck.on::after {
+  content: ''; position: absolute; left: 9rpx; top: 3rpx; width: 10rpx; height: 18rpx;
+  border: solid #FFFFFF; border-width: 0 4rpx 4rpx 0; transform: rotate(45deg);
+}
+
+.qp-preview { margin-bottom: 24rpx; }
+.qp-preview image { width: 100%; background: #FFF; border: 2rpx solid #E2E8F0; border-radius: 12rpx; }
+
+/* 离屏画布：移出可视区但保持渲染上下文有效
+   尺寸必须用 px 而不是 rpx —— 旧版 canvas 的绘制坐标系 = 画布 CSS 像素尺寸，
+   而绘制逻辑用的是 PAGE_W(700) × PAGE_H(990) 的逻辑坐标。若用 rpx（真机上约 350×495px），
+   标签右半边会画到画布外被裁掉，导出的标签缺一半且放大后模糊。 */
+.qp-canvas-wrap {
+  position: absolute; left: -9999px; top: 0;
+  width: 700px; height: 990px; overflow: hidden; pointer-events: none;
+}
+.qp-canvas { display: block; width: 700px; height: 990px; }

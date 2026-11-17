@@ -1,0 +1,120 @@
+<view class="wk">
+  <view wx:if="{{!allow}}" class="guard">
+    <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+    <view class="guard-t">权限受限</view>
+    <view class="guard-s">仅教师 / 管理员可查看领用记录<br />当前身份：{{roleText}}</view>
+    <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
+  </view>
+
+  <block wx:else>
+    <view class="hero lg-hero">
+      <view class="hero-grid"></view>
+      <view class="hero-inner">
+        <view class="hero-t">领用记录</view>
+        <view class="hero-s">学生领用了什么 · 谁领的 · 哪个班 · 用途为何</view>
+        <view class="lg-total">
+          <view class="lg-n">{{total}}</view>
+          <view class="lg-l">条记录（当前筛选）</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="page">
+      <view class="row-between mb-m">
+        <view class="muted">导出不受筛选影响，为完整领用台账</view>
+        <view class="btn btn-ghost btn-sm" bindtap="exportClaims">导出领用单 CSV</view>
+      </view>
+      <!-- 筛选 -->
+      <view class="card card-tight">
+        <view class="flt">
+          <input class="flt-i" placeholder="物品名称 / ID" placeholder-class="inp-ph" value="{{fItem}}" bindinput="onItem" />
+          <input class="flt-i" placeholder="领用人姓名 / 工号" placeholder-class="inp-ph" value="{{fUser}}" bindinput="onUser" />
+        </view>
+        <view class="flt mt-s">
+          <picker mode="selector" range="{{clsOptions}}" bindchange="onClsFilter">
+            <view class="flt-p">{{fCls || '全部班级'}}</view>
+          </picker>
+          <picker mode="selector" range="{{statusOptions}}" bindchange="onStatusFilter">
+            <view class="flt-p">{{fStatus || '全部状态'}}</view>
+          </picker>
+        </view>
+        <view class="flt mt-s">
+          <picker mode="date" value="{{fFrom}}" bindchange="onFrom">
+            <view class="flt-p">{{fFrom || '起始日期'}}</view>
+          </picker>
+          <picker mode="date" value="{{fTo}}" bindchange="onTo">
+            <view class="flt-p">{{fTo || '结束日期'}}</view>
+          </picker>
+          <view class="flt-btn" bindtap="resetFilter">重置</view>
+        </view>
+      </view>
+
+      <!-- 按班级汇总：老师最关心"哪个班领了多少" -->
+      <view wx:if="{{byCls.length}}" class="card mt-m">
+        <view class="sec-t">按班级汇总</view>
+        <view class="cls-sum">
+          <view wx:for="{{byCls}}" wx:key="cls" class="cls-sum-i">
+            <view class="cls-sum-n">{{item.qty}}</view>
+            <view class="cls-sum-c">{{item.count}} 笔</view>
+            <view class="cls-sum-cls">{{item.cls}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card mt-m">
+        <view wx:if="{{loadErr}}" class="empty">
+          <view>加载失败，请下拉刷新重试</view>
+        </view>
+        <view wx:elif="{{!rows.length}}" class="empty">
+          <image class="empty-ic" src="/images/ic-inbox-s.png" mode="aspectFit"></image>
+          <view>没有符合条件的领用记录</view>
+          <view class="tip">调整筛选条件，或重置后重试</view>
+        </view>
+        <view wx:for="{{rows}}" wx:key="key" class="lg-row tap" data-no="{{item.no}}" bindtap="toggle">
+          <view class="grow">
+            <view class="row-between">
+              <view class="list-nm">{{item.itemName}}<text wx:if="{{item.unit}}" class="list-unit"> ×{{item.qty}}{{item.unit}}</text><text wx:else class="list-unit"> ×{{item.qty}}</text></view>
+              <text class="pill {{item.pending ? 'warn' : item.approved ? 'ok' : item.canceled ? 'grey' : 'red'}}">{{item.pending ? '待审批' : item.approved ? '已通过' : item.canceled ? '已撤销' : '已拒绝'}}</text>
+            </view>
+            <view class="list-sub">领用人：{{item.userName}}<text wx:if="{{item.user && item.user !== item.userName}}">（{{item.user}}）</text></view>
+            <view wx:if="{{item.cls}}" class="cls-line">班级：{{item.cls}}</view>
+            <view class="list-sub">{{item.time}}<text wx:if="{{item.no}}"> · {{item.no}}</text></view>
+            <!-- 展开明细 -->
+            <block wx:if="{{openNo === item.no}}">
+              <view wx:if="{{item.reason}}" class="clm-note">用途：{{item.reason}}</view>
+              <view wx:if="{{item.approver}}" class="clm-note">审批人：{{item.approver}}</view>
+              <view wx:if="{{item.reject}}" class="clm-reject">驳回原因：{{item.reject}}</view>
+              <!-- 审批撤销：管理员可撤销误批的「已通过」单，自动回补库存/结清借还 -->
+              <view wx:if="{{isAdmin && item.approved}}" class="btn-sm reject" style="margin-top:16rpx;display:inline-flex" data-no="{{item.no}}" catchtap="openRevoke">撤销此审批</view>
+            </block>
+          </view>
+        </view>
+        <view wx:if="{{hasMore}}" class="more {{loading ? 'busy' : ''}}" bindtap="loadMore">{{loading ? '加载中…' : '加载更多'}}</view>
+        <view wx:elif="{{rows.length}}" class="more end">已显示全部 {{total}} 条</view>
+      </view>
+    </view>
+
+    <!-- 审批撤销确认弹层（管理员）：撤销会回补库存/结清借还，须写明原因 -->
+    <view wx:if="{{showRevoke}}" class="ap-mask" bindtap="closeRevoke">
+      <view class="ap-panel" catchtap="noop">
+        <view class="ap-head">
+          <view class="ap-title">撤销审批</view>
+          <view class="ap-close" bindtap="closeRevoke"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="ap-sub">单号 {{revokeNo}} · 撤销后将回补库存 / 结清借还，并把申请单标记为「已撤销」</view>
+        <view class="ap-tags">
+          <view wx:for="{{revokePresets}}" wx:key="*this"
+                class="ap-tag {{revokeWhy === item ? 'on' : ''}}"
+                data-v="{{item}}" bindtap="pickRevoke">{{item}}</view>
+        </view>
+        <view class="field">
+          <input class="inp" placeholder="撤销原因（可留空，默认「审批撤销」）" placeholder-class="inp-ph" value="{{revokeWhy}}" bindinput="revokeInput" />
+        </view>
+        <view class="btn-row">
+          <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeRevoke">取消</button></view>
+          <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitRevoke">确认撤销</button></view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

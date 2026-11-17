@@ -1,0 +1,30 @@
+/* 领用记录查询 */
+
+/* 物品名后的数量 */
+.list-unit { font-size: 25rpx; font-weight: 600; color: #2B6CFF; }
+
+/* 按班级汇总 */
+.cls-sum { display: flex; flex-wrap: wrap; gap: 14rpx; margin-top: 18rpx; }
+.cls-sum-i {
+  flex: 1 1 46%;
+  min-width: 0;
+  background: #F8FAFC;
+  border-radius: 18rpx;
+  padding: 18rpx 20rpx;
+}
+.cls-sum-n { font-size: 34rpx; font-weight: 700; color: #0D1526; line-height: 1.1; }
+.cls-sum-c { font-size: 21rpx; color: #8A99AF; margin-top: 4rpx; }
+.cls-sum-cls {
+  font-size: 22rpx; color: #5A6B85; margin-top: 8rpx;
+  /* 班级全称可能很长（含全角括号）：换行完整显示，不截断 */
+  white-space: normal; word-break: break-all; overflow: visible;
+}
+
+/* 展开明细 */
+.clm-note {
+  font-size: 23rpx; color: #5A6B85; margin-top: 8rpx;
+  white-space: normal; word-break: break-all; overflow: visible;
+}
+/* 筛选条（与 logs 页同规格） */
+
+/* 审批撤销弹层（与详情页同规格） */

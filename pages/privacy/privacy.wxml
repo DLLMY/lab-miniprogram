@@ -1,0 +1,82 @@
+<view class="pg">
+  <view class="hero">
+    <view class="hero-grid"></view>
+    <view class="hero-in">
+      <view class="hero-ic"><image src="/images/ic-shield-s.png" mode="aspectFit"></image></view>
+      <view class="hero-t">隐私说明</view>
+      <view class="hero-s">关于本工具如何处理你的信息</view>
+    </view>
+  </view>
+
+  <view class="page">
+    <view class="lead">「阿磊的工具箱」是学校实验室使用的耗材与工具管理工具，供教师、管理员按班级处理领用、借还、盘点与报修。我们只保留完成这些功能所必需的最少量信息，不收集与功能无关的任何数据。以下是完整说明。</view>
+
+    <!-- 采集清单 -->
+    <view class="sec">
+      <view class="sec-bar"></view>
+      <view class="sec-t">我们保存哪些信息</view>
+    </view>
+    <view class="card">
+      <view class="row">
+        <view class="rn">姓名</view>
+        <view class="rv">你在登录页主动填写，用于显示身份、核对账号。</view>
+      </view>
+      <view class="row">
+        <view class="rn">工号</view>
+        <view class="rv">你在登录页主动填写，作为账号唯一标识；操作记录里留的是工号。</view>
+      </view>
+      <view class="row">
+        <view class="rn">微信标识</view>
+        <view class="rv">登录时由微信自动提供的一个身份编号（openid），用于免密识别你是谁，不包含昵称、头像等资料。</view>
+      </view>
+    </view>
+
+    <!-- 用途 -->
+    <view class="sec mt">
+      <view class="sec-bar"></view>
+      <view class="sec-t">这些信息用来做什么</view>
+    </view>
+    <view class="card">
+      <view class="li">识别登录身份，做到「一人一号、免密进入」</view>
+      <view class="li">区分不同角色的操作权限</view>
+      <view class="li">在领用、借出、审批等记录中标注操作人，便于日后核对</view>
+      <view class="tipbox">一个工号只能绑定一个微信，一个微信也只能绑定一个工号。这些信息仅在本工具内部使用，不会用于其他用途。</view>
+    </view>
+
+    <!-- 不采集 -->
+    <view class="sec mt">
+      <view class="sec-bar"></view>
+      <view class="sec-t">我们不会收集什么</view>
+    </view>
+    <view class="card">
+      <view class="li no">不读取你的微信昵称、头像、性别、地区</view>
+      <view class="li no">不获取手机号、身份证号、通讯录</view>
+      <view class="li no">不获取位置、相册、相机、麦克风等权限</view>
+      <view class="tipbox">本工具没有申请上述任何系统权限，也没有相关的信息采集功能。</view>
+    </view>
+
+    <!-- 存储与安全 -->
+    <view class="sec mt">
+      <view class="sec-bar"></view>
+      <view class="sec-t">存储与安全</view>
+    </view>
+    <view class="card">
+      <view class="li">信息保存在工具配套的云数据库（或你自行配置的数据源）中，仅用于本工具运转。</view>
+      <view class="li">微信标识仅用于身份识别，不会展示在页面或操作记录里。</view>
+      <view class="li">你生成的个人机器人密钥只本人可见，用于在 WorkBuddy 里操作本工具。</view>
+    </view>
+
+    <!-- 解绑与更正 -->
+    <view class="sec mt">
+      <view class="sec-bar"></view>
+      <view class="sec-t">更正与解绑</view>
+    </view>
+    <view class="card">
+      <view class="li">姓名、工号如有登记错误，可在「我的 → 切换 / 重新绑定账号」重新登录，或联系账号维护人更正。</view>
+      <view class="li">如需解除微信与工号的绑定，联系账号维护人清空该工号的绑定记录后，即可用新的微信重新绑定。</view>
+    </view>
+
+    <view class="foot">阿磊的工具箱 · 实验室耗材与工具管理</view>
+    <view class="foot sub">本说明依据工具当前实际功能编写，如功能调整会同步更新。</view>
+  </view>
+</view>

@@ -24,52 +24,7 @@
   margin: 0 24rpx;
 }
 
-/* 右侧数量 */
-.iv-qty {
-  text-align: right;
-  flex-shrink: 0;
-  margin-left: 16rpx;
-}
-.iv-qn {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: #0D1526;
-  line-height: 1.1;
-}
-.iv-qu {
-  font-size: 21rpx;
-  color: #8A99AF;
-  margin-top: 4rpx;
-}
-.iv-qty.low .iv-qn { color: #DC2626; }
-
 /* 搜索下拉建议（与首页同规格，保持手感一致） */
-.search-wrap { position: relative; }
-.suggest-mask { position: fixed; inset: 0; z-index: 40; }
-.suggest {
-  position: absolute; top: calc(100% + 12rpx); left: 0; right: 0; z-index: 50;
-  background: #FFFFFF; border-radius: 22rpx; overflow: hidden;
-  box-shadow: 0 16rpx 48rpx rgba(20, 33, 61, .16);
-  max-height: 62vh; overflow-y: auto;
-}
-.suggest-item {
-  display: flex; align-items: center; padding: 22rpx 26rpx;
-  border-bottom: 1rpx solid #F0F2F6;
-}
-.suggest-item:last-child { border-bottom: none; }
-.suggest-ic {
-  width: 56rpx; height: 56rpx; border-radius: 16rpx; flex-shrink: 0; margin-right: 20rpx;
-  display: flex; align-items: center; justify-content: center;
-}
-.suggest-ic image { width: 30rpx; height: 30rpx; }
-.suggest-ic.mat { background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%); }
-.suggest-ic.tool { background: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%); }
-.suggest-nm { font-size: 28rpx; color: #1A2238; font-weight: 600; }
-.suggest-sub { font-size: 22rpx; color: #8A95A8; margin-top: 4rpx; }
-.suggest-tag {
-  flex-shrink: 0; margin-left: 16rpx; font-size: 22rpx; color: #6B7688;
-  padding: 4rpx 14rpx; border-radius: 12rpx; background: #F3F5F9;
-}
 
 /* 快捷出入库（P2-⑯） */
 .iv-acts { display: flex; gap: 12rpx; margin-top: 14rpx; }
@@ -83,5 +38,43 @@
 .iv-act.out { color: #DC2626; background: rgba(239, 68, 68, .10); }
 
 /* 效期提示（P3-㉕） */
-.list-warn { color: #DC2626; font-weight: 600; }
-.list-soon { color: #D97706; font-weight: 600; }
+/* 批量建档弹层 */
+.iv-mask {
+  position: fixed; left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(10, 16, 32, .45); display: flex; align-items: flex-end; z-index: 50;
+}
+.iv-sheet {
+  width: 100%; background: #FFFFFF; border-radius: 32rpx 32rpx 0 0;
+  padding: 36rpx 32rpx calc(36rpx + env(safe-area-inset-bottom));
+}
+.iv-close { font-size: 30rpx; color: #94A3B8; padding: 0 12rpx; }
+.iv-area {
+  width: 100%; height: 420rpx; box-sizing: border-box; margin: 18rpx 0;
+  padding: 20rpx; border: 2rpx solid #DCE3EE; border-radius: 16rpx;
+  font-size: 24rpx; color: #1E293B; line-height: 1.6;
+}
+/* 补货入库行：勾选框 + 名称 + 数量输入 */
+.rp-row {
+  display: flex; align-items: center; padding: 18rpx 4rpx;
+  border-bottom: 2rpx solid #F1F5F9;
+}
+.rp-row .ck {
+  width: 36rpx; height: 36rpx; border: 3rpx solid #CBD5E1; border-radius: 10rpx;
+  margin-right: 18rpx; flex-shrink: 0;
+}
+.rp-row .ck.on { background: #2B6CFF; border-color: #2B6CFF; position: relative; }
+.rp-row .ck.on::after {
+  content: ''; position: absolute; left: 9rpx; top: 3rpx; width: 10rpx; height: 18rpx;
+  border: solid #FFFFFF; border-width: 0 4rpx 4rpx 0; transform: rotate(45deg);
+}
+.rp-qty { flex-shrink: 0; margin-left: 16rpx; text-align: center; }
+.rp-inp {
+  width: 128rpx; height: 64rpx; box-sizing: border-box; text-align: center;
+  border: 2rpx solid #DCE3EE; border-radius: 12rpx; font-size: 26rpx; color: #1E293B;
+}
+
+/* 工具行右侧：状态徽章 + 行内操作按钮（借出/归还）纵向排列 */
+.col-end {
+  display: flex; flex-direction: column; align-items: flex-end;
+  flex-shrink: 0; margin-left: 16rpx;
+}
