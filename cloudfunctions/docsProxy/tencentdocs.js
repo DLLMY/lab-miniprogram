@@ -155,15 +155,26 @@ const CFG = {
 
 // 腾讯文档各表的列名（中文）。必须与真实文档的列名【逐字一致】，否则读写会拿到 undefined / 被静默跳过。
 // 下列名称已按 2026-10-22 拉取的 8 张表真实列名校准。
+// —— 数据域（班级）行级隔离引擎：与 clouddb.js 共用同一份裁决 ——
+const ds = require('./data-scope.js')
+
 const COL = {
-  users: { id: '用户ID', name: '姓名', role: '角色', cls: '班级', status: '状态', openid: '微信OpenID', robotKeyHash: '机器人密钥哈希' },
+  users: { id: '用户ID', name: '姓名', role: '角色', cls: '班级', status: '状态', openid: '微信OpenID', robotKeyHash: '机器人密钥哈希', managedClasses: '带班班级' },
   materials: { id: '耗材ID', name: '名称', spec: '规格', cat: '类别', loc: '存放位置', stock: '当前库存', unit: '单位', safe: '预警线', status: '状态', expire: '有效期' },
   tools: { id: '工具ID', name: '名称', spec: '规格', loc: '存放位置', status: '状态', holder: '当前持有人' },
-  requisitions: { id: '申请ID', user: '申请人ID', item: '物品ID', type: '物品类型', qty: '数量', reason: '用途说明', status: '状态', time: '申请时间', approver: '审批人', reject: '驳回原因' },
-  borrow: { id: '借还ID', user: '借用人ID', tool: '工具ID', out: '借出时间', plan: '计划归还', in: '实际归还', status: '状态' },
-  stock_io: { id: '流水ID', item: '物品ID', dir: '方向', qty: '数量', op: '操作人', time: '操作时间', note: '备注', src: '来源类型' },
-  access: { id: '记录ID', user: '用户ID', point: '门禁点', time: '刷卡时间', result: '结果' },
-  logs: { id: '日志ID', time: '时间', actor: '操作人', op: '操作类型', target: '对象', result: '结果' },
+  // 以下 7 张流水表带「归属班级」列，由 data-scope 在 addRecord 时自动继承发起人班级。
+  // 注意：buildValues 对表里不存在的列会 warn 并跳过 → 腾讯文档未手工加列时自动退化为「不隔离」，
+  // 不会破坏现有功能；加列后隔离即刻生效（见 docs/数据域隔离设计.md）。
+  // 「借期天数」列需在腾讯文档申请表手工添加；未添加时 buildValues 跳过 → 借期回落默认 7 天
+  // 「交付时间」列需在腾讯文档申请表手工添加；未添加时 buildValues 跳过该列 →
+  // 交付状态记不住（其余功能不受影响，与「借期天数」同样的降级策略）。
+  requisitions: { id: '申请ID', user: '申请人ID', item: '物品ID', type: '物品类型', qty: '数量', reason: '用途说明', status: '状态', time: '申请时间', approver: '审批人', reject: '驳回原因', days: '借期天数', cls: '归属班级', delivered: '交付时间' },
+  // 「借出备注」「归还验收备注」两列需在腾讯文档借还表手工添加；未添加时 buildValues 会跳过该列，
+  // 备注存不进去但不影响其他功能（与「归属班级」列同样的降级策略）。
+  borrow: { id: '借还ID', user: '借用人ID', tool: '工具ID', out: '借出时间', plan: '计划归还', in: '实际归还', status: '状态', note: '借出备注', backNote: '归还验收备注', cls: '归属班级' },
+  stock_io: { id: '流水ID', item: '物品ID', dir: '方向', qty: '数量', op: '操作人', time: '操作时间', note: '备注', src: '来源类型', cls: '归属班级' },
+  access: { id: '记录ID', user: '用户ID', point: '门禁点', time: '刷卡时间', result: '结果', cls: '归属班级' },
+  logs: { id: '日志ID', time: '时间', actor: '操作人', op: '操作类型', target: '对象', result: '结果', cls: '归属班级' },
   // 实训室归属管理体系（云库专属，字段用英文 key 与 clouddb 恒等映射；腾讯文档无对应中文列）
   labs: {
     id: 'id', name: 'name', campus: 'campus', building: 'building', floor: 'floor', roomNo: 'roomNo',
@@ -175,12 +186,12 @@ const COL = {
     id: 'id', labId: 'labId', labName: 'labName', title: 'title', category: 'category', desc: 'desc',
     reporterId: 'reporterId', reporterName: 'reporterName',
     status: 'status', priority: 'priority', handlerId: 'handlerId', handlerName: 'handlerName',
-    resolvedNote: 'resolvedNote', createdAt: 'createdAt', updatedAt: 'updatedAt'
+    resolvedNote: 'resolvedNote', createdAt: 'createdAt', updatedAt: 'updatedAt', cls: 'cls'
   },
   inspections: {
     id: 'id', labId: 'labId', labName: 'labName', title: 'title', planDate: 'planDate',
     executorId: 'executorId', executorName: 'executorName',
-    status: 'status', result: 'result', createdAt: 'createdAt', doneAt: 'doneAt'
+    status: 'status', result: 'result', createdAt: 'createdAt', doneAt: 'doneAt', cls: 'cls'
   }
 }
 
@@ -189,6 +200,26 @@ const COL = {
 const ROLES = ['student', 'teacher', 'admin', 'super']
 const SUPER = 'super'
 const ADMIN = 'admin'
+// 角色层级：super(3) > admin(2) > teacher(1) > student(0)
+// 创建/管理/删除权限按「调用者层级」裁决：super 可操作任意角色，其余仅可操作「严格低于自身层级」的角色
+//   → 管理员只能建 教师/学生；教师只能建 学生（详见 decideUserWrite / decideUserDelete）
+const ROLE_LEVEL = { student: 0, teacher: 1, admin: 2, super: 3 }
+
+// —— 数量解析：必须是范围内的整数 ——
+// 为什么不再用 Math.floor(Number(x) || 0)：
+//   ① 小数 2.5 被静默截断成 2 —— 账面按 2 记、实物给 2.5，账实差 0.5，
+//      而提示文案写着「必须是整数」却放行了小数（校验与文案不符）；
+//   ② 建档/导入原用 Number(x) || 0（完全不取整），小数直接进库存，
+//      而演示 mock 会截断 → 生产与演示行为分叉（库存口径不一致）。
+// 上限：误输 1e12 会把库存写成天文数字，导出 Excel（15 位有效数字）直接失真。
+const MAX_QTY = 1000000
+function parseQty(v, min) {
+  const n = Number(v)
+  const lo = (min === undefined) ? 1 : min
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return null
+  if (n < lo || n > MAX_QTY) return null
+  return n
+}
 
 // 中英状态翻译（腾讯文档存中文，前端用英文名；这里双向映射）
 const TR = {
@@ -540,6 +571,15 @@ function nextOffset(page, cur, count) {
   return cur + count
 }
 
+// 数据域读过滤：缓存里永远存「全量」，按当前请求 scope 在返回时过滤。
+// opts.noScope=true 供跨班写守卫读取原始记录，避免把「无权」误报成「记录不存在」。
+function applyScope(sheetKey, o, rows) {
+  const scope = ds.currentScope()
+  if (o && o.noScope) return rows
+  if (!ds.needGuard(scope) || !ds.isScopedTable(sheetKey)) return rows
+  return rows.filter(r => ds.rowVisible(scope, sheetKey, r.fields || r))
+}
+
 async function getRecords(sheetKey, filterFn, opts) {
   const o = opts || {}
   const useCache = !o.noCache && !o.fieldTitles && !o.recordIDs
@@ -550,7 +590,7 @@ async function getRecords(sheetKey, filterFn, opts) {
     const hit = _cache.get(sheetKey)
     if (hit && (now - hit.at) < CACHE_TTL) {
       _cacheStats.hit++
-      return filterFn ? hit.data.filter(filterFn) : hit.data
+      return applyScope(sheetKey, o, filterFn ? hit.data.filter(filterFn) : hit.data)
     }
   }
   _cacheStats.miss++
@@ -558,7 +598,7 @@ async function getRecords(sheetKey, filterFn, opts) {
   // 精确取行：用 recordIDs 直接定位，1 次请求代替全表扫描
   if (o.recordIDs && o.recordIDs.length) {
     const page = await callSmart(sheetKey, CFG.ACT.getRecords, { recordIDs: o.recordIDs })
-    return (page.records || []).map(recToFields)
+    return applyScope(sheetKey, o, (page.records || []).map(recToFields))
   }
 
   const all = []
@@ -592,7 +632,7 @@ async function getRecords(sheetKey, filterFn, opts) {
     _oversizeWarned[sheetKey] = true
     console.warn(`[tencentdocs] 表 ${sheetKey} 已 ${all.length} 行（>${CACHE_MAX_ROWS}），不缓存：后续每次读都会全表分页扫描，建议归档历史数据`)
   }
-  return result
+  return applyScope(sheetKey, o, result)
 }
 
 // 写操作后失效对应表的缓存（保证下次读到最新数据）
@@ -611,7 +651,29 @@ function cacheStats() {
   })
 }
 
+// 跨班写守卫：读原始（未过滤）记录判断，避免把「无权」误报成「记录不存在」。
+async function __assertWritable(sheetKey, ids) {
+  const scope = ds.currentScope()
+  if (!ds.needGuard(scope) || !ds.isScopedTable(sheetKey)) return
+  let all = []
+  try { all = await getRecords(sheetKey, null, { noCache: true, noScope: true }) } catch (e) { return }
+  for (const id of ids) {
+    const row = all.find(r => r.recordId === id)
+    if (row && !ds.canWriteRow(scope, sheetKey, row.fields || row)) {
+      throw new ds.ScopeDeniedError('无权操作其他班级的数据')
+    }
+  }
+}
+
 async function addRecord(sheetKey, fieldsMap) {
+  const scope = ds.currentScope()
+  // 流水表自动继承发起人归属班级（buildValues 对不存在的列自动跳过，旧表结构不受影响）
+  if (ds.shouldStampCls(scope, sheetKey) && COL[sheetKey] && COL[sheetKey].cls) {
+    const k = COL[sheetKey].cls
+    if (fieldsMap[k] === undefined || fieldsMap[k] === null || fieldsMap[k] === '') {
+      fieldsMap[k] = scope.ownerCls || ''
+    }
+  }
   const values = await buildValues(sheetKey, fieldsMap)
   const page = await callSmart(sheetKey, CFG.ACT.addRecords, { records: [{ values }] })
   const created = page.records || []
@@ -639,32 +701,110 @@ function withWriteLock(fn) {
 //   3) Map 惰性清理，条目数有上限，不会随运行时间无限增长；
 //   4) 腾讯文档侧多实例并发时本 Map 是实例级内存态，存在极小跨实例漏网概率——
 //      正常业务量下单实例即可覆盖，属可接受的兜底而非硬保证。
-const IDEM_WINDOW_MS = 5000
+// ⚠ 窗口长度要覆盖「用户看到失败提示 → 反应过来 → 再点一次」的间隔：
+//   弱网/超时后请求其实已到达服务器并执行了，用户看不到结果会再点一次 → 重复执行。
+//   5 秒太短（人反应不过来），30 秒能覆盖绝大多数重试。
+//   命中时会给结果挂 idem 标记，前端明确提示「重复提交已忽略」，不会假装做了两次。
+const IDEM_WINDOW_MS = 30000
 const _recentWrites = new Map()
 async function withWriteIdem(key, fn) {
   const now = Date.now()
   const hit = _recentWrites.get(key)
-  if (hit && now - hit.t < IDEM_WINDOW_MS) return hit.p
+  if (hit && now - hit.t < IDEM_WINDOW_MS) {
+    // ⚠ 命中幂等窗口时不能原样返回上次的"成功"结果 ——
+    //   老师会看到"入库成功"两次，实际只入了一次（静默丢库存，且毫无提示）。
+    //   这里挂上 idem/deduped 标记 + 明确文案，由前端提示"重复提交已忽略"。
+    //   注意：这正是防"双击/弱网重试"的设计本意（那种情况返回同一结果是对的），
+    //   关键是不能假装"做了两次"。
+    const p = hit.p.then(r => {
+      // 注意：适配器内部的返回值有两种形态 —— 业务失败是 {code:400,data:{msg}}，
+      // 成功则是【裸载荷】（如 {} 或 {no,id}，没有 code 字段），code:0 是外层包装时才加的。
+      // 所以这里不能用 r.code === 0 判定成功，否则永远不成立、标记永远挂不上。
+      const bizFail = !!(r && typeof r === 'object' && r.code && r.code >= 400)
+      if (r && typeof r === 'object' && !bizFail) {
+        // 标记同时放在顶层与 data 里：各 action 的载荷位置不统一
+        // （有的直接是业务对象，有的包在 data 里），只放一处会读不到。
+        const mark = {
+          idem: true, deduped: true,
+          warn: '检测到重复提交（相同内容），本次未重复执行'
+        }
+        const out = Object.assign({}, r, mark)
+        if (r.data && typeof r.data === 'object') out.data = Object.assign({}, r.data, mark)
+        return out
+      }
+      return r
+    })
+    p.catch(() => {})
+    return p
+  }
   if (_recentWrites.size > 500) {
     for (const [k, v] of _recentWrites) if (now - v.t >= IDEM_WINDOW_MS) _recentWrites.delete(k)
   }
   const entry = { t: now, p: null }
   entry.p = (async () => {
     const r = await fn()
-    if (r && r.code) _recentWrites.delete(key) // 业务失败不占窗口（如库存不足/物品已存在）
+    if (r && r.code) _recentWrites.delete(key)
     return r
   })().catch(e => { _recentWrites.delete(key); throw e })
   _recentWrites.set(key, entry)
-  entry.p.catch(() => {}) // 防止复用方未及 await 时的 unhandled rejection
+  entry.p.catch(() => {})
   return entry.p
 }
 
 // 按 recordID 批量删除（用于清理写测试产生的脏数据：如申请人ID 为空的领用单）
 // ⚠️ smartbook v2 的 deleteRecords 入参是 { recordIDs: [string,...] }（复数、字符串数组），
 //    不是 { records: [{recordID}] }，后者服务端会 ret=0 但静默不删。
+// —— 原子条件更新（CAS·降级版）——
+// 腾讯文档的表格 API 只能「整行读改写」，没有 where 条件更新 → 做不了真正的原子 CAS。
+// 这里退化为「条件校验 + 写入」：单实例内靠 withWriteLock 串行，跨实例仍可能丢更新
+//   （这是平台限制，不是本项目的实现问题）。
+// ⚠ 生产主后端是【云数据库】，那里的 casUpdate 是真 CAS（where 条件更新 + 原子自增）；
+//   腾讯文档只是回退兜底。这里保留同名同签名的函数，是为了让两套适配器的业务代码保持同构。
+async function casUpdate(sheetKey, recordId, condition, fieldsMap) {
+  const list = await getRecords(sheetKey, r => r.recordId === recordId)
+  const rec = list[0]
+  if (!rec) return { ok: false, updated: 0 }
+  // 条件校验：condition 的键是英文字段名，需翻译成腾讯文档的中文列名
+  const colMap = COL[sheetKey] || {}
+  const match = Object.keys(condition || {}).every(k => {
+    const cnKey = colMap[k] || k
+    const got = rec.fields[cnKey]
+    return ('' + (got === undefined || got === null ? '' : got)) === ('' + condition[k])
+  })
+  if (!match) return { ok: false, updated: 0 }
+  await updateRecord(sheetKey, recordId, fieldsMap)
+  return { ok: true, updated: 1 }
+}
+
+// 原子增减库存（降级版）：读 → 算 → 条件写入，条件不匹配则重读重试
+async function atomicAdjustStock(recordId, delta, tries) {
+  const maxTry = tries || 4
+  for (let i = 0; i < maxTry; i++) {
+    const list = await getRecords('materials', r => r.recordId === recordId)
+    const rec = list[0]
+    if (!rec) return { ok: false, reason: 'missing' }
+    const cur = Number(rec.fields[COL.materials.stock]) || 0
+    const next = cur + delta
+    if (next < 0) return { ok: false, reason: 'insufficient', stock: cur }
+    const r = await casUpdate('materials', recordId, { stock: cur }, { [COL.materials.stock]: next })
+    if (r.ok) return { ok: true, stock: next }
+  }
+  return { ok: false, reason: 'conflict' }
+}
+
+// 原子切换工具状态（降级版）：状态仍等于期望值才改
+async function atomicSwitchToolStatus(recordId, fromStatus, toStatus, extraFields) {
+  const fields = Object.assign({ [COL.tools.status]: toStatus }, extraFields || {})
+  // 平台差异：腾讯文档清空一个文本列必须写 [{type:'text',text:''}]，写空字符串等于"不修改"
+  if (fields[COL.tools.holder] === '') fields[COL.tools.holder] = [{ type: 'text', text: '' }]
+  const r = await casUpdate('tools', recordId, { status: fromStatus }, fields)
+  return r.ok
+}
+
 async function deleteRecordByIds(sheetKey, ids) {
   const list = (ids || []).filter(Boolean)
   if (!list.length) return 0
+  await __assertWritable(sheetKey, list)
   await callSmart(sheetKey, CFG.ACT.deleteRecords, { recordIDs: list })
   invalidateCache(sheetKey)
   // 删后回读确认（平台存在 ret=0 但静默不删的行为，见上方注释）：行还在就重删一次，
@@ -681,6 +821,7 @@ async function deleteRecordByIds(sheetKey, ids) {
 }
 
 async function updateRecord(sheetKey, recordId, fieldsMap) {
+  await __assertWritable(sheetKey, [recordId])
   const values = await buildValues(sheetKey, fieldsMap)
   const page = await callSmart(sheetKey, CFG.ACT.updateRecords, {
     records: [{ recordID: recordId, values }]
@@ -693,6 +834,30 @@ async function updateRecord(sheetKey, recordId, fieldsMap) {
 // ============================================================
 // 5. 读归一化（腾讯中文记录 → 前端英文契约）
 // ============================================================
+// 效期（有效期）转换：'YYYY-MM-DD' → 该日 23:59:59（北京时间）的 epoch 毫秒。
+// 统一放在服务端：前端传本地时区字符串会差一天；到期日当天仍算有效，次日才算过期。
+// 效期解析：支持 YYYY-MM-DD / YYYY/M/D / YYYY年M月D日 / YYYYMMDD，
+// 并校验「真实日期」——2026-02-30 这种会被 Date.UTC 自动进位到 3-02，
+// 看起来像设了一个月后的效期，实际比用户填的晚了 2 天。
+// 返回 { ts }（空值=无限制）或 null（格式非法，调用方必须明确报错，不能静默丢弃）。
+function expireTs(v) {
+  const s = ('' + (v || '')).trim()
+  if (!s) return { ts: 0 }
+  const mk = (y, mo, d) => {
+    if (y < 1970 || y > 2100 || mo < 1 || mo > 12 || d < 1) return null
+    const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate()   // 该月实际天数
+    if (d > dim) return null
+    return { ts: Date.UTC(y, mo - 1, d, 15, 59, 59) }      // 15:59:59 UTC == 23:59:59 +08:00
+  }
+  // 纯数字 8 位：YYYYMMDD（Excel 里最常见的日期形态）
+  if (/^\d{8}$/.test(s)) return mk(+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8))
+  const m = s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/)
+  if (m) return mk(+m[1], +m[2], +m[3])
+  const n = Number(s)
+  if (Number.isFinite(n) && n > 0) return { ts: n }
+  return null
+}
+
 function normMaterial(f) {
   const expTs = Number(f[COL.materials.expire]) || 0
   const ms = expTs ? (expTs - Date.now()) : null
@@ -727,10 +892,13 @@ function normReq(f) {
     no: f[COL.requisitions.id], user: f[COL.requisitions.user],
     matId: f[COL.requisitions.item], toolId: f[COL.requisitions.item], kind,
     qty: Number(f[COL.requisitions.qty]) || 0,
+    // 借期：老单没有这一列时为空，前端显示"默认 7 天"
+    days: Number(f[COL.requisitions.days]) || 0,
     // 用途与驳回原因：审批页据此展示"为什么领"，我的申请据此展示"为什么被拒"
     reason: f[COL.requisitions.reason] || '', reject: f[COL.requisitions.reject] || '',
     status: TR.reqRev[f[COL.requisitions.status]] || f[COL.requisitions.status] || '',
-    time: fmtTs(f[COL.requisitions.time]) || ''
+    time: fmtTs(f[COL.requisitions.time]) || '',
+    cls: ds.readCls(f)
   }
 }
 function normBorrow(f) {
@@ -743,8 +911,12 @@ function normBorrow(f) {
     // 现在借出即写应还时间，列表/我的申请据此标"已逾期"。
     plan: fmtTs(f[COL.borrow.plan]) || '', in: fmtTs(f[COL.borrow.in]) || '',
     status,
+    // 借出备注（用途/临时说明）与归还验收备注：老数据没有这两列时为空，不影响既有渲染
+    note: f[COL.borrow.note] || '',
+    backNote: f[COL.borrow.backNote] || '',
     // 逾期判定统一在服务端做（避免各端各算一套时区口径）：仅在"仍借出中且已过应还时间"成立
-    overdue: status === '借出' && planTs > 0 && Date.now() > planTs
+    overdue: status === '借出' && planTs > 0 && Date.now() > planTs,
+    cls: ds.readCls(f)
   }
 }
 function normUser(f) {
@@ -758,29 +930,50 @@ function normUser(f) {
     name: ('' + (f[COL.users.name] || '')).trim(),
     role: (ROLES.indexOf(role) >= 0 ? role : 'student'),
     cls: ('' + (f[COL.users.cls] || '')).trim(),
+    // 老师带班列表（腾讯文档文本列可能是数组，统一用 readText 归一化）
+    managedClasses: ds.sanitizeManagedClasses(ds.readText(f, COL.users.managedClasses)),
     status: ('' + (f[COL.users.status] || '')).trim(),
     openid: ('' + (f[COL.users.openid] || '')).trim(),
     robotKeyHash: ('' + (f[COL.users.robotKeyHash] || '')).trim()
   }
 }
+// 冲销产生的反向流水（src=冲销 / note=冲销流水…）本身不可再冲销，
+// 否则会无限反向回滚库存；报表同样已排除这两类流水。
+function isSettledFlow(f) {
+  const note = '' + (f[COL.stock_io.note] || '')
+  const src = '' + (f[COL.stock_io.src] || '')
+  // ⚠ 判定必须精确，不能用「备注里含'冲销流水'」这种宽匹配：
+  //   老师随手写一句「与张老师冲销流水核对无误」，这条流水就会被误判成已冲销 →
+  //   ① 此后再也冲销不了 ② 被报表排除在库存统计之外 → 账实不符。
+  // 锚点：src === '冲销'（反向流水，最可靠）；note 前缀 '[已冲销]'（原流水已被冲销）；
+  //   反向流水的 note 形如「冲销流水 S2026...」→ 用正则精确匹配（不误伤普通备注）。
+  //   src 是兜底之外的第二道保险：腾讯文档未手工加「来源类型」列时 src 恒空，
+  //   这时只能靠 note 判定，所以 note 这条不能去掉，只能收紧。
+  return src === '冲销'
+    || /^\[已冲销\]/.test(note)
+    || /^冲销流水\s+\S+$/.test(note)
+}
 function normStockIO(f) {
   return {
     no: f[COL.stock_io.id], matId: f[COL.stock_io.item],
     type: TR.ioRev[f[COL.stock_io.dir]] || 'in', qty: Number(f[COL.stock_io.qty]) || 0,
-    operator: f[COL.stock_io.op] || '', time: fmtTs(f[COL.stock_io.time]) || '', note: f[COL.stock_io.note] || ''
+    operator: f[COL.stock_io.op] || '', time: fmtTs(f[COL.stock_io.time]) || '', note: f[COL.stock_io.note] || '',
+    cls: ds.readCls(f), reversed: isSettledFlow(f)
   }
 }
 function normAccess(f) {
   return {
     // 时间列是日期类型，读回为时间戳字符串——必须过 fmtTs，否则前端直接渲染 "1792683028958"
     time: fmtTs(f[COL.access.time]) || '', actor: f[COL.access.user] || '',
-    door: f[COL.access.point] || '', result: f[COL.access.result] || ''
+    door: f[COL.access.point] || '', result: f[COL.access.result] || '',
+    cls: ds.readCls(f)
   }
 }
 function normLog(f) {
   return {
     time: fmtTs(f[COL.logs.time]) || '', actor: f[COL.logs.actor] || '',
-    op: f[COL.logs.op] || '', target: f[COL.logs.target] || '', result: f[COL.logs.result] || ''
+    op: f[COL.logs.op] || '', target: f[COL.logs.target] || '', result: f[COL.logs.result] || '',
+    cls: ds.readCls(f)
   }
 }
 
@@ -804,31 +997,44 @@ function planDue(days) {
 
 function nowParts() {
   const d = new Date(Date.now() + 8 * 3600 * 1000)
-  return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes() }
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() }
 }
+// 单号唯一性：分钟级+2位随机（90种）时，同一分钟 ~12 笔即 50% 撞号，冲销按单号查会命中错行。
+// 改为「秒 + 进程内单调序号 + 2位随机」，同实例内几乎不可能撞；跨实例另有毫秒时间戳前缀。
+let _genSeq = 0
 function now() {
   const t = nowParts(); const q = n => ('' + n).padStart(2, '0')
   return `${t.y}-${q(t.mo)}-${q(t.d)} ${q(t.h)}:${q(t.mi)}`
 }
 function genNo(p) {
   const t = nowParts(); const q = n => ('' + n).padStart(2, '0')
-  return `${p}${t.y}${q(t.mo)}${q(t.d)}${q(t.h)}${q(t.mi)}${Math.floor(Math.random() * 90 + 10)}`
+  _genSeq = (_genSeq + 1) % 1000
+  return `${p}${t.y}${q(t.mo)}${q(t.d)}${q(t.h)}${q(t.mi)}${q(t.s)}${String(_genSeq).padStart(3, '0')}${Math.floor(Math.random() * 90 + 10)}`
 }
 
 // 查单个物品（耗材 M / 工具 T），返回 {type, item:{..., rid}}
-async function getItem(id) {
+async function getItem(id, type) {
   // trim + 大写归一：扫码/手输可能带空格或小写（' t001'），不归一会掉到耗材分支查空
   const key = ('' + (id || '')).trim().toUpperCase()
   if (!key) return null
-  const isTool = key.startsWith('T')
-  const col = isTool ? COL.tools : COL.materials
-  // 缓存命中时 0 次 API；未命中时只取需要的列，减小响应体
-  const list = await getRecords(isTool ? 'tools' : 'materials',
-    r => ('' + r.fields[col.id]) === key)
-  const rec = list[0]
-  if (!rec) return null
-  const base = isTool ? normTool(rec.fields) : normMaterial(rec.fields)
-  return { type: isTool ? 'tool' : 'material', item: { ...base, rid: rec.recordId } }
+  const pick = async (t) => {
+    const isTool = t === 'tool'
+    const col = isTool ? COL.tools : COL.materials
+    // 缓存命中时 0 次 API；未命中时只取需要的列，减小响应体
+    const list = await getRecords(isTool ? 'tools' : 'materials',
+      r => ('' + r.fields[col.id]) === key)
+    const rec = list[0]
+    if (!rec) return null
+    const base = isTool ? normTool(rec.fields) : normMaterial(rec.fields)
+    return { type: isTool ? 'tool' : 'material', item: { ...base, rid: rec.recordId } }
+  }
+  // 显式类型优先：搜索结果跳转时会带上 type（search 已返回 type，不必再靠猜）
+  if (type === 'tool' || type === 'material') return await pick(type)
+  // 未指定类型：先按「ID 首字母」猜（保持原有行为），猜不到再查另一张表。
+  // ⚠ 旧实现只猜一次 → 批量建档允许自定义编号，只要编号不以 M/T 开头
+  //   （如「WM-001」「仪器01」）就查不到；编号以 T 开头却不是工具的还会查到错的那张表。
+  const guess = key.startsWith('T') ? 'tool' : 'material'
+  return (await pick(guess)) || (await pick(guess === 'tool' ? 'material' : 'tool'))
 }
 
 async function listMaterials() {
@@ -906,7 +1112,32 @@ async function listMine(user) {
 
 async function listPending() {
   const list = await getRecords('requisitions', r => ('' + r.fields[COL.requisitions.status]) === '待审批')
-  return list.map(r => normReq(r.fields))
+  if (!list.length) return []
+  // 名称映射：审批是老师最关键的操作界面，却只显示工号与物品ID
+  // （「申请人 S001」「M001 × 2」——老师得自己查台账才知道批的是谁、领什么）。
+  // 领用记录页 listClaims 早已做同样映射，两页口径必须一致；
+  // 前端 approve.js 也早就写了 `item.userName || item.user` 的兼容读取，只是后端一直没给这两个字段。
+  const mats = await getRecords('materials')
+  const tools = await getRecords('tools')
+  const users = await getRecords('users')
+  const nameOf = {}
+  for (const r of mats) nameOf['' + r.fields[COL.materials.id]] = r.fields[COL.materials.name] || ''
+  for (const r of tools) nameOf['' + r.fields[COL.tools.id]] = r.fields[COL.tools.name] || ''
+  const userOf = {}
+  for (const r of users) {
+    const f = r.fields
+    userOf['' + (f[COL.users.id] || '')] = { name: f[COL.users.name] || '', cls: ('' + (f[COL.users.cls] || '')).trim() }
+  }
+  return list.map(r => {
+    const q = normReq(r.fields)
+    const itemId = '' + (r.fields[COL.requisitions.item] || '')
+    const u = userOf['' + (r.fields[COL.requisitions.user] || '')] || {}
+    return Object.assign(q, {
+      itemName: nameOf[itemId] || '',
+      userName: u.name || '',
+      userCls: u.cls || ''
+    })
+  })
 }
 
 // ============================================================
@@ -917,7 +1148,8 @@ async function listPending() {
 // ============================================================
 // 只回前端安全字段，openid 等内部信息不下发
 function publicUser(u) {
-  return u ? { id: u.id, name: u.name, role: u.role, cls: u.cls } : null
+  // managedClasses 必须透出：prodHandler 的 me 由此构造，数据域裁决依赖它
+  return u ? { id: u.id, name: u.name, role: u.role, cls: u.cls, managedClasses: u.managedClasses || '' } : null
 }
 
 // 账号可用：未填状态视为可用；填了则必须为「启用」
@@ -1009,8 +1241,33 @@ async function whoami(openid) {
 //   - 以「工号」为业务主键，upsert 不改动工号本身，避免破坏领用/借还记录里的申请人引用。
 //   - 删除不级联清理历史记录（保留工号引用便于审计溯源）。
 // ============================================================
-async function adminListUsers() {
+// 教职工名册（指派执行人/处理人用）。
+// 刻意不走 ds.userVisible：那个函数按班级过滤，教师看不到任何同事（教师自身 cls 为空），
+// 导致"把任务派给某位老师"永远做不了。这里只暴露工号/姓名/角色三项最小信息，
+// 且过滤掉已停用账号——工号姓名本就是同事之间互相知道的公开信息。
+async function listStaff() {
   const list = await getRecords('users')
+  return list
+    .map(r => normUser(r.fields))
+    .filter(u => u.role === 'teacher' || u.role === 'admin' || u.role === 'super')
+    .filter(u => u.status !== '停用')
+    .filter(u => !!(u.id && u.id.trim()))
+    .map(u => ({ id: u.id, name: u.name, role: u.role }))
+}
+
+// 账号配置体检用：返回全部账号的最小字段（不做行级过滤，仅供管理员自检）。
+// 与 adminListUsers 的区别：那个按调用者层级过滤，这个给管理员做全库配置核对。
+async function listAllUsersForAudit() {
+  const list = await getRecords('users')
+  return list
+    .map(r => normUser(r.fields))
+    .filter(u => !!(u.id && u.id.trim()))
+    .map(u => ({ id: u.id, name: u.name, role: u.role, cls: u.cls, managedClasses: u.managedClasses, status: u.status }))
+}
+
+async function adminListUsers(me) {
+  const list = await getRecords('users')
+  const callerLevel = me ? (ROLE_LEVEL[me.role] != null ? ROLE_LEVEL[me.role] : 0) : 0
   return list
     .map(r => {
       const u = normUser(r.fields)
@@ -1020,50 +1277,62 @@ async function adminListUsers() {
         name: u.name,
         role: u.role,
         cls: u.cls,
+        managedClasses: u.managedClasses,
         status: u.status,
         bound: !!(u.openid && ('' + u.openid).trim())
       }
     })
     .filter(u => !!(u.id && ('' + u.id).trim())) // 跳过完全空白的行
+    // 服务端按调用者层级过滤：超级管理员看全部；其余仅看「严格低于自身层级」的账号（admin 看教师/学生，teacher 看学生）
+    .filter(u => callerLevel >= ROLE_LEVEL.super ? true : (ROLE_LEVEL[u.role] != null ? ROLE_LEVEL[u.role] : 0) < callerLevel)
+    // 数据域过滤：老师只能看到自己带班的学生（super/admin 全通，不受影响）
+    .filter(u => ds.userVisible(ds.currentScope(), u))
 }
 
 // 写锁：两个管理员同时新建同一工号时，都会走过「查重→不存在→插行」→ 出现重复行；
 // ============================================================
 // 5.7 用户写操作权限裁决（纯函数，无网络依赖，便于单元测试）
-// 层级：super(超级管理员) > admin(管理员) > teacher(教师) > student(学生)
-//   • admin：可管理 学生/教师（含将其提升为 管理员），但不可触碰 管理员/超级管理员 账号，也不可授予/删除 超级管理员。
-//   • super：拥有修改所有用户身份的全部权限，包括授予/撤销 超级管理员、管理其它 管理员/超级管理员、以及修改自己的身份。
+// 层级：super(3) > admin(2) > teacher(1) > student(0)
+//   • super：可创建/管理/删除 任意角色（含授予/撤销超级管理员、管理其它管理员、改自己身份）。
+//   • admin：仅可创建/管理/删除 「严格低于自身层级」的角色 —— 即 教师、学生（不可创建/管理 管理员、超级管理员）。
+//   • teacher：仅可创建/管理/删除 学生（不可创建/管理 教师、管理员、超级管理员）。
 // 返回 null 表示放行；否则返回 { code, data:{msg} }（直接作为云函数响应体）。
 // ============================================================
 function decideUserWrite(me, target) {
   const callerRole = me ? me.role : null
+  const callerLevel = ROLE_LEVEL[callerRole] != null ? ROLE_LEVEL[callerRole] : -1
   const callerSuper = callerRole === SUPER
-  const callerAdmin = callerSuper || callerRole === ADMIN
-  if (!callerAdmin) return { code: 403, data: { msg: '仅管理员可操作' } }
-  const existing = target.existingRole || 'student'
+  // 至少教师及以上才能操作用户
+  if (callerLevel < ROLE_LEVEL.teacher) return { code: 403, data: { msg: '仅教师及以上可操作用户' } }
   const newRole = ('' + (target.role || '')).trim().toLowerCase()
-  // 授予超级管理员：必须本人即为超级管理员（防越权提权）
-  if (newRole === SUPER && !callerSuper) return { code: 403, data: { msg: '仅超级管理员可授予超级管理员' } }
-  // 自锁优先于「管理特权账号」判定：管理员改自己的角色/状态时给出更具体的提示，
-  // 而非笼统的「仅超级管理员可管理…」（其本人账号恰好属于特权账号，两条规则都满足）。
-  // 自锁：管理员不能改自己的角色/状态（防把自己锁在管理功能外）；超级管理员可改自己
+  const newLevel = ROLE_LEVEL[newRole] != null ? ROLE_LEVEL[newRole] : -1
+  // 超级管理员可创建/管理任何角色；其余仅可创建/管理「严格低于自身层级」的角色
+  //   —— 即：管理员只能建 教师/学生；教师只能建 学生
+  if (!callerSuper && newLevel >= callerLevel) {
+    const allow = callerLevel === ROLE_LEVEL.admin ? '教师、学生' : '学生'
+    return { code: 403, data: { msg: '权限不足：' + (callerRole === ADMIN ? '管理员' : '教师') + '仅可创建/管理 ' + allow + ' 角色' } }
+  }
+  // 自锁：非超级管理员不能改自己的角色/状态（防把自己锁在管理功能外）
   if (me && target.id && ('' + target.id).toUpperCase() === ('' + me.id).toUpperCase() && !callerSuper) {
+    const existing = target.existingRole || 'student'
     if (newRole && newRole !== existing) return { code: 400, data: { msg: '不能修改自己的角色（防止把自己锁在管理功能外）' } }
     if (target.statusChanging) return { code: 400, data: { msg: '不能修改自己的账号状态' } }
   }
-  // 修改/删除已有管理员或超级管理员账号：必须超级管理员（覆盖 admin 改他人/改姓名等场景）
-  if (target.existingRole && (existing === ADMIN || existing === SUPER) && !callerSuper)
-    return { code: 403, data: { msg: '仅超级管理员可管理管理员/超级管理员账号' } }
   return null
 }
 
 function decideUserDelete(me, existingRole, id) {
   const callerRole = me ? me.role : null
+  const callerLevel = ROLE_LEVEL[callerRole] != null ? ROLE_LEVEL[callerRole] : -1
   const callerSuper = callerRole === SUPER
-  const callerAdmin = callerSuper || callerRole === ADMIN
-  if (!callerAdmin) return { code: 403, data: { msg: '仅管理员可操作' } }
-  if (existingRole && (existingRole === ADMIN || existingRole === SUPER) && !callerSuper)
-    return { code: 403, data: { msg: '仅超级管理员可删除管理员/超级管理员账号' } }
+  if (callerLevel < ROLE_LEVEL.teacher) return { code: 403, data: { msg: '仅教师及以上可操作用户' } }
+  const targetLevel = ROLE_LEVEL[existingRole] != null ? ROLE_LEVEL[existingRole] : -1
+  // 超级管理员可删除任何角色；其余仅可删除「严格低于自身层级」的角色
+  //   —— 即：管理员只能删 教师/学生；教师只能删 学生
+  if (!callerSuper && targetLevel >= callerLevel) {
+    const allow = callerLevel === ROLE_LEVEL.admin ? '教师、学生' : '学生'
+    return { code: 403, data: { msg: '权限不足：' + (callerRole === ADMIN ? '管理员' : '教师') + '仅可删除 ' + allow + ' 账号' } }
+  }
   if (me && id && ('' + id).toUpperCase() === ('' + me.id).toUpperCase())
     return { code: 400, data: { msg: '不能删除当前登录的账号' } }
   return null
@@ -1071,6 +1340,43 @@ function decideUserDelete(me, existingRole, id) {
 
 // 绑定登录同理，两台设备同时绑同一工号时后写覆盖前写，双向 1:1 约束被击穿。
 // me：当前登录用户（index.js 传入的 {id,name,role,cls}）——用于权限裁决与禁止改自己的角色/状态。
+// users 是全局表（getRecords 不按班级过滤），教师层级上虽可建/改学生，
+// 但必须限制在本人带班范围，否则知道工号即可跨班改删（IDOR）。
+function userScopeErr(scope, data, existing) {
+  if (!ds.needGuard(scope) || scope.role !== 'teacher') return null
+  if (existing) {
+    const u = normUser(existing.fields)
+    if (!ds.userVisible(scope, { id: u.id, cls: u.cls })) {
+      return { code: 403, data: { msg: '只能管理本人带班的学生账号' } }
+    }
+  }
+  const cls = String((data && data.cls) || '').trim()
+  // 新增必须有本班归属；编辑时若改班级，目标班级也必须在带班范围内
+  if (!cls && !existing) return { code: 403, data: { msg: '新增学生必须属于本人带班（归属班级须与带班一致）' } }
+  if (cls && scope.classes.indexOf(cls) < 0) {
+    return { code: 403, data: { msg: '不能把学生改到本人带班之外' } }
+  }
+  return null
+}
+
+// 保护：系统必须保留至少一名【启用中的超级管理员】。
+// 背景：decideUserWrite 对 super 豁免了"不能改自己"的限制（否则超管改不了自己的姓名），
+//   但也留下了自毁口子——唯一一名超管把自己降级/停用/删除后，全校再无管理入口：
+//   清库、迁移、日志、门禁、创建管理员全部失效，只能进数据库手工改回。
+//   这里在写入前做一次兜底裁决，任何人都无法绕过。
+function lastSuperGuard(userObjs, targetId, nextRole, nextStatus) {
+  const tid = ('' + (targetId || '')).trim().toUpperCase()
+  const cur = (userObjs || []).find(u => ('' + (u.id || '')).trim().toUpperCase() === tid)
+  if (!cur || cur.role !== SUPER || (cur.status || '启用') !== '启用') return null
+  // 目标操作后仍是"启用中的 super" → 放行
+  if (nextRole === SUPER && (nextStatus || '启用') === '启用') return null
+  const others = (userObjs || []).filter(u =>
+    ('' + (u.id || '')).trim().toUpperCase() !== tid &&
+    u.role === SUPER && (u.status || '启用') === '启用')
+  if (others.length) return null
+  return { code: 400, data: { msg: '系统必须保留至少一名启用中的超级管理员，不能降级/停用/删除最后一个超管' } }
+}
+
 async function adminUpsertUser(data, me) {
   return withWriteLock(async () => {
     data = data || {}
@@ -1101,6 +1407,8 @@ async function adminUpsertUser(data, me) {
       if (rec && rec.recordId !== rid) return { code: 409, data: { msg: '工号 ' + id + ' 已被其他行占用，不能重复' } }
       rec = byRid
     }
+    // 新增（无 rid）且工号已存在 → 明确报错，避免把已有账号的姓名/角色静默覆盖掉
+    if (!rid && rec) return { code: 409, data: { msg: '工号 ' + id + ' 已存在，请直接编辑该账号或换用工号' } }
 
     // 权限裁决（纯函数）：admin 不可管 管理员/超级管理员、不可授 super、不可改自己；super 拥有全部权限。
     const su = rec ? normUser(rec.fields) : null
@@ -1111,12 +1419,32 @@ async function adminUpsertUser(data, me) {
       statusChanging: su ? (status !== (su.status || '启用')) : false
     })
     if (decision) return decision
+    // 最后一个启用超管的保护（降级/停用自己）
+    const superGuard = lastSuperGuard(allUsers.map(r => normUser(r.fields)), id, role, status)
+    if (superGuard) return superGuard
+    const scopeErr = userScopeErr(ds.currentScope(), data, rec)
+    if (scopeErr) return scopeErr
 
+    // 老师带班列表：仅 super / admin 可设置，且仅 teacher 角色有效；
+    // 未显式提交时保留原值，避免编辑姓名/状态时把带班信息清空。
+    const canSetScope = !!(me && (me.role === SUPER || me.role === ADMIN))
+    const hasMC = Object.prototype.hasOwnProperty.call(data, 'managedClasses')
+    const managedClasses = role === 'teacher'
+      ? (canSetScope && hasMC ? ds.sanitizeManagedClasses(data.managedClasses) : (su ? su.managedClasses : ''))
+      : ''
+    // 教师必须配带班班级：漏配的后果是「静默失效」——
+    // 行级隔离按 managedClasses 过滤，没配的老师看不到本班任何申请与流水，
+    // 但账号在用户列表里看起来完全正常，现场只会表现为"老师反映看不到数据"，极难排查。
+    // 这里直接拒绝建档/改档，逼着配置完整。
+    if (role === 'teacher' && !managedClasses) {
+      return { code: 400, data: { msg: '教师账号必须配置带班班级，否则看不到本班任何申请与流水' } }
+    }
     const fields = {
       [COL.users.id]: id,
       [COL.users.name]: name,
       [COL.users.role]: TR.roleFwd[role] || role,
       [COL.users.cls]: cls,
+      [COL.users.managedClasses]: managedClasses,
       [COL.users.status]: status
     }
     if (rec) {
@@ -1136,10 +1464,60 @@ async function adminDeleteUser(data, me) {
     const rec = list[0]
     if (!rec) return { code: 404, data: { msg: '该工号不存在' } }
     const su = normUser(rec.fields)
+    const scopeErr = userScopeErr(ds.currentScope(), null, rec)
+    if (scopeErr) return scopeErr
     const decision = decideUserDelete(me, su.role, id)
     if (decision) return decision
+    // 最后一个启用超管的保护（删除自己）
+    const superGuard = lastSuperGuard(list.map(r => normUser(r.fields)), id, null, null)
+    if (superGuard) return superGuard
+    // ⚠ 已绑定微信的账号禁止物理删除：
+    //   删除会让 openid 随行一起消失 → 同一工号若被重建（错录账号清理后重建、或换人接手），
+    //   新行处于「未绑定」状态，「一个工号被绑定后他人不可再绑」这条保护随之失效，
+    //   任何人都能抢绑该工号（实测复现：删除→同名重建→另一微信绑定成功）。
+    //   正确处理：停用（保留档案与绑定），确需删除则先「解绑」再删。
+    if (su.openid) {
+      return { code: 409, data: { msg: '该账号已绑定微信，不能直接删除：请改用「停用」（保留档案与绑定），或先「解绑」再删除' } }
+    }
     await deleteRecordByIds('users', [rec.recordId])
     return { id }
+  })
+}
+
+// 解除微信绑定（管理员）：清空该账号行的 openid，使该工号可以重新绑定。
+//
+// 为什么必须有它：bindLogin 在「该工号已绑定其他微信」时提示"请联系管理员清空该工号的绑定"，
+//   但此前管理员根本没有清空绑定的入口（adminUpsertUser 不写 openid、前端也没有按钮）→ 换绑是死路：
+//   本人换了微信号想重新登录、或管理员发现绑定录错，都只能进数据库手改。
+// 解绑后该工号即可被重新绑定 —— 这正是"工号↔openid 一对一"能被管理员纠错的前提。
+async function adminUnbindUser(data, me) {
+  return withWriteLock(async () => {
+    const id = ('' + (data && data.id || '')).trim().toUpperCase()
+    if (!id) return { code: 400, data: { msg: '工号必填' } }
+    const list = await getRecords('users', r => ('' + (r.fields[COL.users.id] || '')).trim().toUpperCase() === id)
+    const rec = list[0]
+    if (!rec) return { code: 404, data: { msg: '该工号不存在' } }
+    const su = normUser(rec.fields)
+    const scopeErr = userScopeErr(ds.currentScope(), null, rec)
+    if (scopeErr) return scopeErr
+    // 层级裁决与删除一致：super 任意；admin 仅教师/学生；teacher 仅学生
+    const callerRole = me ? me.role : null
+    const callerLevel = ROLE_LEVEL[callerRole] != null ? ROLE_LEVEL[callerRole] : -1
+    const targetLevel = ROLE_LEVEL[su.role] != null ? ROLE_LEVEL[su.role] : -1
+    if (callerLevel < ROLE_LEVEL.teacher) return { code: 403, data: { msg: '仅教师及以上可解绑账号' } }
+    if (callerRole !== SUPER && targetLevel >= callerLevel) {
+      const allow = callerLevel === ROLE_LEVEL.admin ? '教师、学生' : '学生'
+      return { code: 403, data: { msg: '权限不足：' + (callerRole === ADMIN ? '管理员' : '教师') + '仅可解绑 ' + allow + ' 账号' } }
+    }
+    if (!su.openid) return { code: 400, data: { msg: '该账号尚未绑定微信，无需解绑' } }
+    await updateRecord('users', rec.recordId, { [COL.users.openid]: '' })
+    // 解绑是安全敏感操作，必须留痕（谁、何时、解了谁）
+    ds.overrideOwnerCls(ds.readCls(rec.fields))
+    await addRecord('logs', {
+      [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: (me && me.id) || '',
+      [COL.logs.op]: '解除微信绑定', [COL.logs.target]: id, [COL.logs.result]: '已解绑，该工号可重新绑定'
+    })
+    return { id, unbound: true }
   })
 }
 
@@ -1194,14 +1572,16 @@ async function requisition(data) {
   // —— 参数预校验（无副作用；失败不进幂等窗口）——
   const matId = ('' + (data.matId || '')).trim()
   if (!matId) return { code: 400, data: { msg: '缺少物品ID，无法提交申请' } }
-  const qty = Math.floor(Number(data.qty) || 0)
-  if (qty < 1) return { code: 400, data: { msg: '数量必须是大于 0 的整数' } }
+  const qty = parseQty(data.qty)
+  if (qty === null) return { code: 400, data: { msg: '数量必须是 1 ~ 1000000 之间的整数' } }
   // 用途说明（P1-⑦）：出库必须能追溯到"用到哪去了"。服务端截断到 60 字，
   // 既防止超长塞爆单元格，也避免有人把整篇说明粘进来。
   const reason = ('' + (data.reason || '')).trim().slice(0, 60)
   if (!reason) return { code: 400, data: { msg: '请填写用途说明' } }
   // —— 幂等 + 写锁：窗口内同一用户对同一物品同数量的申领只提交一单 ——
-  const idemKey = ['req', data.user || '', matId, qty].join('|')
+  // 幂等键要能区分"不同的操作"：用途不同就是两次不同的申请，
+  // 键里少了用途说明 → 5 秒内两次不同用途的申请，第二次会拿到第一次的单号，用途被吞。
+  const idemKey = ['req', data.user || '', matId, qty, reason].join('|')
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     const mats = await getRecords('materials', r => ('' + r.fields[COL.materials.id]) === matId)
     if (!mats[0]) return { code: 400, data: { msg: '物品不存在：' + matId } }
@@ -1258,13 +1638,16 @@ async function toolRequisition(data) {
   const reason = ('' + (data.reason || '')).trim().slice(0, 60)
   if (!reason) return { code: 400, data: { msg: '请填写用途说明' } }
   // —— 幂等 + 写锁：窗口内同一用户对同一工具的借出申请只提交一单 ——
-  const idemKey = ['treq', data.user || '', toolId].join('|')
+  // 键里必须带用途与借期：同一学生同一工具但借期不同（比赛/实训周期不同）是两次不同申请
+  const idemKey = ['treq', data.user || '', toolId, reason, data.days || ''].join('|')
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     const tools = await getRecords('tools', r => ('' + r.fields[COL.tools.id]) === toolId)
     if (!tools[0]) return { code: 400, data: { msg: '工具不存在：' + toolId } }
     const rec = await addRecord('requisitions', {
       [COL.requisitions.user]: data.user, [COL.requisitions.item]: toolId,
       [COL.requisitions.type]: '借出', [COL.requisitions.qty]: 1, [COL.requisitions.reason]: reason,
+      // 借期：学生申请时填的天数（1~90），审批通过后按它算应还日期
+      [COL.requisitions.days]: Math.min(90, Math.max(1, parseInt(data.days, 10) || DEFAULT_LOAN_DAYS)),
       [COL.requisitions.status]: '待审批', [COL.requisitions.time]: now(), [COL.requisitions.approver]: ''
     })
     await addRecord('logs', {
@@ -1285,6 +1668,10 @@ async function approve(data) {
     if (('' + req.fields[COL.requisitions.status]) !== '待审批') return { code: 400, data: { msg: '该申请已处理' } }
 
     const isTool = ('' + (req.fields[COL.requisitions.type] || '')) === '借出'
+    // 审批产生的借还/流水/日志统一继承「申请单」的班级（申请人所属班），
+    // 不再让 addRecord 自动打上审批老师的第一带班（scope.ownerCls）：多班老师
+    // 审批别班学生时，否则会把记录错标到本班，班级汇总与行级隔离同时失真。
+    ds.overrideOwnerCls(ds.readCls(req.fields))
 
     if (!data.ok) {
       // 驳回必须写明原因（P1-⑧）：否则申请人只知道"被拒了"却不知道错在哪，
@@ -1312,10 +1699,18 @@ async function approve(data) {
       // 三条写互不依赖，并行提交，缩短审批耗时
       const borrowPayload = () => ({
         [COL.borrow.id]: genNo('B'), [COL.borrow.user]: applicant, [COL.borrow.tool]: toolId,
-        [COL.borrow.out]: now(), [COL.borrow.plan]: planDue(data.days), [COL.borrow.in]: '', [COL.borrow.status]: '借出中'
+        // 应还日期：审批人指定的借期 > 申请单里学生填的借期 > 默认 7 天
+        [COL.borrow.out]: now(),
+        [COL.borrow.plan]: planDue(data.days || req.fields[COL.requisitions.days]),
+        [COL.borrow.in]: '', [COL.borrow.status]: '借出中',
+        // 申请单里学生填的「用途说明」天然就是借出备注，直接带过来，无需再问一遍
+        [COL.borrow.note]: ('' + (req.fields[COL.requisitions.reason] || '')).trim().slice(0, 120)
       })
+      // 原子切换工具状态（CAS）：状态仍是「在库」才借出 → 同一件工具不会被借两次
+      const toolSw = await atomicSwitchToolStatus(tool.recordId, '在库', '借出', { [COL.tools.holder]: applicant })
+      // CAS 未命中 = 工具已被别人借走 → 与串行路径同口径回 400（不是 500 服务器故障）
+      if (!toolSw) return { code: 400, data: { msg: '该工具不在库（已被他人借走）：' + toolId } }
       await Promise.all([
-        updateRecord('tools', tool.recordId, { [COL.tools.status]: '借出', [COL.tools.holder]: applicant }),
         updateRecord('requisitions', req.recordId, { [COL.requisitions.status]: '已通过', [COL.requisitions.approver]: data.actor }),
         addRecord('borrow', borrowPayload()),
         addRecord('logs', { [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor, [COL.logs.op]: '审批通过工具借出', [COL.logs.target]: toolId, [COL.logs.result]: '已通过' })
@@ -1343,13 +1738,50 @@ async function approve(data) {
     // 领用人一律取申请单上的申请人，不回退 data.actor（审批人），保证流水上的经手人是谁领的
     const applicant = ('' + (req.fields[COL.requisitions.user] == null ? '' : req.fields[COL.requisitions.user])).trim() || data.actor
     const note = '领用申请 ' + ('' + (req.fields[COL.requisitions.id] || data.no))
+    // 归属班级继承「申请单」上的班级（= 申请人学生本人的班级），而不是 scope.ownerCls
+    // （审批人是老师，ownerCls 是老师的班级）。否则学生领用流水不带班级，
+    // 老师按班级查不到学生领用了什么，且行级隔离下会退化成"公共资源"对所有老师可见。
+    const reqCls = ds.readCls(req.fields)
     const outFlow = {
       [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: matId,
       [COL.stock_io.dir]: '出库', [COL.stock_io.qty]: qty,
       [COL.stock_io.op]: applicant, [COL.stock_io.time]: now(), [COL.stock_io.note]: note, [COL.stock_io.src]: '领用出库'
     }
+    if (reqCls) outFlow[COL.stock_io.cls] = reqCls
+
+    // ===== 幂等闸门：检测本单此前是否已产生出库流水 =====
+    // 审批是一次「扣库存 + 写出库流水 + 改申请单状态 + 写日志」的多步写。
+    // 正常情况下步骤内的部分失败已被 verifyStock / verifyReqOutFlow / verifyReqApproved
+    // 的「回读校验 + 补写重试」自愈；这里堵的是自愈也失败时抛错、老师按提示重试的那个窗口：
+    //   上一次可能已经把库存扣了、却没把申请单状态改成「已通过」→ 状态检查放行 → 重试【再扣一次】，
+    //   账面比流水多扣一份，而页面仍显示「已通过」，无人察觉。
+    // 锚点用审批必写的 note（'领用申请 <单号>'）：不依赖可能缺列的 src
+    //   （腾讯文档未手工加「来源类型」列时 buildValues 会跳过该列，src 恒空）。
+    // 反向冲销流水的 note 是「冲销流水 …」，与本锚点不同，不会误命中。
+    const priorOut = await getRecords('stock_io', r => ('' + (r.fields[COL.stock_io.note] || '')) === note)
+    if (priorOut.length) {
+      // 已经出库过 → 绝不二次扣减；只补齐申请单状态并留痕
+      await updateRecord('requisitions', req.recordId, {
+        [COL.requisitions.status]: '已通过', [COL.requisitions.approver]: data.actor
+      })
+      await addRecord('logs', Object.assign({
+        [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor,
+        [COL.logs.op]: '审批通过（幂等补齐）', [COL.logs.target]: data.no,
+        [COL.logs.result]: '已补齐审批状态，库存未重复扣减'
+      }, reqCls ? { [COL.logs.cls]: reqCls } : {}))
+      return {
+        idempotent: true, no: data.no,
+        warn: '该申请此前已出库，本次未重复扣减库存；若账面与流水不符，请在库存页执行盘点核对'
+      }
+    }
+    // 原子扣减（CAS）：期望值进条件 → 两个老师同时审批同一单也不会双扣库存
+    const adj = await atomicAdjustStock(mat.recordId, -qty)
+    if (!adj.ok) {
+      if (adj.reason === 'insufficient') return { code: 400, data: { msg: `库存不足：当前 ${adj.stock}，申请 ${qty}` } }
+      if (adj.reason === 'missing') return { code: 400, data: { msg: '物品不存在：' + matId } }
+      throw new Error('审批未完全生效（申请 ' + data.no + '）：库存并发冲突，重试后仍未成功。请刷新后重试')
+    }
     await Promise.all([
-      updateRecord('materials', mat.recordId, { [COL.materials.stock]: cur - qty }),
       updateRecord('requisitions', req.recordId, { [COL.requisitions.status]: '已通过', [COL.requisitions.approver]: data.actor }),
       // 【P0 账务修复】领用出库必须留痕。此前只扣库存不写流水，导致出入库流水缺失最主要的
       // 出库方式，库存与流水必然对不上，也无法做消耗统计与审计。按 io 同款格式补一条出库流水，
@@ -1358,7 +1790,7 @@ async function approve(data) {
       addRecord('logs', { [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor, [COL.logs.op]: '审批通过', [COL.logs.target]: data.no, [COL.logs.result]: '已通过' })
     ])
     // 并行写无事务：最坏「库存扣了、申请单仍待审批」→ 再次审批会二次扣减。回读校验并自愈重试，仍不过抛错。
-    if (!(await verifyStock(matId, cur - qty))) {
+    if (!(await verifyStock(matId, adj.stock))) {
       throw new Error('审批未完全生效（申请 ' + data.no + '）：库存可能未扣减。请刷新后重试；若仍失败，请到腾讯文档核对「当前库存」后手动修正')
     }
     if (!(await verifyReqApproved(req))) {
@@ -1372,6 +1804,148 @@ async function approve(data) {
   })
 }
 
+// 审批撤销：只撤销「已通过」的申请，并回滚其账务影响。
+// 耗材单：把审批产生的出库流水冲销（库存回补 + 写反向入库流水 + 原流水打 [已冲销]）。
+// 工具单：把已生成的借还记录结清、工具回在库。
+// 约束：① 仅「已通过」可撤，撤后状态=已撤销，二次撤销被拒；② 归属班级跟随申请单；
+//       ③ 冲销/结清在本函数内内联完成——writeLock 不可重入，不能调用 reverseIO/returnTool；
+//       ④ 若对应流水已冲销（历史手工冲销过），跳过重复回补，只改状态，避免二次加库存。
+async function revokeApprove(data) {
+  const no = '' + (data.no || '')
+  if (!no) return { code: 400, data: { msg: '缺少申请单号' } }
+  const why = ('' + (data.reason || '')).trim().slice(0, 60)
+  return withWriteLock(async () => {
+    const reqs = await getRecords('requisitions', r => ('' + r.fields[COL.requisitions.id]) === no)
+    const req = reqs[0]
+    if (!req) return { code: 404, data: { msg: '申请不存在：' + no } }
+    const curStatus = '' + (req.fields[COL.requisitions.status] || '')
+    if (curStatus !== '已通过') {
+      return { code: 400, data: { msg: curStatus === '已撤销' ? '该申请已撤销，不可重复撤销' : '只有「已通过」的申请可以撤销（当前：' + (curStatus || '未知') + '）' } }
+    }
+    const f = req.fields
+    ds.overrideOwnerCls(ds.readCls(f))
+    const isTool = ('' + (f[COL.requisitions.type] || '')) === '借出'
+    const info = { no, kind: isTool ? 'tool' : 'material', rolledBack: false }
+    const cls = ds.readCls(f)
+
+    if (isTool) {
+      const toolId = '' + (f[COL.requisitions.item] == null ? '' : f[COL.requisitions.item])
+      const applicant = '' + (f[COL.requisitions.user] == null ? '' : f[COL.requisitions.user])
+      const tools = await getRecords('tools', r => ('' + r.fields[COL.tools.id]) === toolId)
+      const borrows = await getRecords('borrow', r =>
+        ('' + r.fields[COL.borrow.tool]) === toolId && ('' + r.fields[COL.borrow.user]) === applicant &&
+        ('' + r.fields[COL.borrow.status]) === '借出中')
+      const writes = []
+      if (tools[0] && ('' + tools[0].fields[COL.tools.holder]) === applicant) {
+        // 原子回库（CAS）：状态仍是「借出」才置在库 → 不覆盖并发发生的新借出
+        const backSw = await atomicSwitchToolStatus(tools[0].recordId, '借出', '在库', { [COL.tools.holder]: '' })
+        if (!backSw) writes.push(updateRecord('tools', tools[0].recordId, { [COL.tools.status]: '在库', [COL.tools.holder]: '' }))
+        info.rolledBack = true
+      }
+      for (const b of borrows) {
+        writes.push(updateRecord('borrow', b.recordId, { [COL.borrow.status]: '已归还', [COL.borrow.in]: now() }))
+        info.rolledBack = true
+      }
+      writes.push(updateRecord('requisitions', req.recordId, {
+        [COL.requisitions.status]: '已撤销', [COL.requisitions.approver]: data.actor,
+        [COL.requisitions.reject]: why || '审批撤销'
+      }))
+      writes.push(addRecord('logs', Object.assign({
+        [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor,
+        [COL.logs.op]: '审批撤销', [COL.logs.target]: no, [COL.logs.result]: info.rolledBack ? '已撤销并回滚' : '已撤销（无需回滚）'
+      }, cls ? { [COL.logs.cls]: cls } : {})))
+      await Promise.all(writes)
+      // 工具路径：借还记录找不到「借出中」且工具已不在借用人名下 → 说明学生已自行归还，
+      // 本来就没有可回滚的账务影响，属正常情况，不算异常。
+      info.impact = info.rolledBack ? 'rolledBack' : 'none'
+      return info
+    }
+
+    // 耗材：找到审批生成的出库流水（note='领用申请 <no>'，src='领用出库'）
+    const matId = '' + (f[COL.requisitions.item] == null ? '' : f[COL.requisitions.item])
+    const note = '领用申请 ' + no
+    const flows = await getRecords('stock_io', r => {
+      const fn = '' + (r.fields[COL.stock_io.note] || '')
+      if (fn !== note) return false
+      const src = '' + (r.fields[COL.stock_io.src] || '')
+      // 「来源类型」列可能没在腾讯文档手工添加（buildValues 对不存在的列会 warn 并跳过），
+      // src 恒空时不能据此判定「不是领用出库」——note 由审批写入，是可靠锚点。
+      if (src && src !== '领用出库') return false
+      return true
+    })
+    const out = flows.find(x => !isSettledFlow(x.fields))
+    if (!out) {
+      // 找不到账务影响：可能是这单本来就没产生出库流水，也可能是流水被删/被改过。
+      // 绝不能静默当成「无需回滚」——否则库存没回来却看不出问题，账实不符。
+      info.impact = 'missing'
+      info.warn = '未找到该申请对应的出库流水，库存可能未回补，请人工核对库存'
+    } else {
+      const qty = Number(out.fields[COL.stock_io.qty]) || 0
+      const mats = await getRecords('materials', r => ('' + r.fields[COL.materials.id]) === matId)
+      if (!mats[0]) return { code: 404, data: { msg: '关联物品不存在：' + matId } }
+      const stock = Number(mats[0].fields[COL.materials.stock]) || 0
+      const next = stock + qty
+      const backCls = ds.readCls(out.fields) || cls
+      await Promise.all([
+        updateRecord('materials', mats[0].recordId, { [COL.materials.stock]: next }),
+        updateRecord('stock_io', out.recordId, { [COL.stock_io.note]: '[已冲销] ' + (out.fields[COL.stock_io.note] || '') }),
+        addRecord('stock_io', Object.assign({
+          [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: matId, [COL.stock_io.dir]: '入库', [COL.stock_io.qty]: qty,
+          [COL.stock_io.op]: data.actor, [COL.stock_io.time]: now(),
+          [COL.stock_io.note]: '冲销流水 ' + ('' + out.fields[COL.stock_io.id]), [COL.stock_io.src]: '冲销'
+        }, backCls ? { [COL.stock_io.cls]: backCls } : {}))
+      ])
+      if (!(await verifyStock(matId, next))) {
+        throw new Error('撤销未完全生效：库存 ' + matId + ' 未回补，请刷新后重试')
+      }
+      info.rolledBack = true
+      info.impact = 'rolledBack'
+      info.stock = next
+    }
+    await updateRecord('requisitions', req.recordId, {
+      [COL.requisitions.status]: '已撤销', [COL.requisitions.approver]: data.actor,
+      [COL.requisitions.reject]: why || '审批撤销'
+    })
+    await addRecord('logs', Object.assign({
+      [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor,
+      [COL.logs.op]: '审批撤销', [COL.logs.target]: no,
+      [COL.logs.result]: info.rolledBack ? '已撤销并回滚'
+        : (info.impact === 'missing' ? '已撤销（未找到出库流水，库存未回补）' : '已撤销（无需回滚）')
+    }, cls ? { [COL.logs.cls]: cls } : {}))
+    return info
+  })
+}
+
+// 批量驳回：一次写锁内驳回多条「待审批」申请，统一驳回原因，返回成功/跳过明细。
+// 仅供已有 approve 权限调用；单条失败（状态已变/记录被删）不阻断其余条目。
+async function batchReject(data) {
+  const nos = Array.isArray(data.nos) ? data.nos.map(x => '' + x).filter(Boolean) : []
+  if (!nos.length) return { code: 400, data: { msg: '请先选择要驳回的申请' } }
+  const why = ('' + (data.reason || '')).trim().slice(0, 60)
+  if (!why) return { code: 400, data: { msg: '请填写驳回原因' } }
+  return withWriteLock(async () => {
+    const okNos = [], skipped = []
+    for (const no of nos) {
+      const rows = await getRecords('requisitions', r => ('' + r.fields[COL.requisitions.id]) === no)
+      const req = rows[0]
+      if (!req || ('' + req.fields[COL.requisitions.status]) !== '待审批') {
+        skipped.push({ no, reason: req ? '该申请已处理' : '申请不存在' })
+        continue
+      }
+      ds.overrideOwnerCls(ds.readCls(req.fields))
+      await updateRecord('requisitions', req.recordId, {
+        [COL.requisitions.status]: '已拒绝', [COL.requisitions.approver]: data.actor, [COL.requisitions.reject]: why
+      })
+      await addRecord('logs', Object.assign({
+        [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor,
+        [COL.logs.op]: '审批拒绝', [COL.logs.target]: no, [COL.logs.result]: '已拒绝：' + why
+      }, ds.readCls(req.fields) ? { [COL.logs.cls]: ds.readCls(req.fields) } : {}))
+      okNos.push(no)
+    }
+    return { ok: okNos.length, skipped, nos: okNos }
+  })
+}
+
 // 新增耗材建档（老师首次入库一种全新物品时用）
 // 自动分配 M+序号 形式的耗材ID：取现有最大序号 +1，避免与人工编号冲突
 async function addMaterial(data) {
@@ -1379,11 +1953,15 @@ async function addMaterial(data) {
   const name = ('' + (data.name || '')).trim()
   if (!name) return { code: 400, data: { msg: '请填写物品名称' } }
   const unit = ('' + (data.unit || '')).trim() || '个'
-  const qty = Number(data.qty) || 0
-  if (qty < 0) return { code: 400, data: { msg: '数量不能为负数' } }
+  const qty = parseQty(data.qty, 0)
+  if (qty === null) return { code: 400, data: { msg: '数量必须是 0 ~ 1000000 之间的整数' } }
+  // 效期：填了就必须是能解析的日期，不能静默丢弃（丢了用户以为设了效期、实际没有 → 临期提醒不触发）
+  const expParsed = expireTs(data.expire)
+  if (expParsed === null) return { code: 400, data: { msg: '有效期格式不正确，请用日期选择器或 YYYY-MM-DD' } }
+  const expTs = expParsed.ts
   // —— 幂等 + 写锁：窗口内同一操作人同名同量建档只执行第一笔，
   //    重复提交复用第一笔的 { id, ... }（前端提示与单次提交一致）——
-  const idemKey = ['addMat', data.actor || '', name, qty].join('|')
+  const idemKey = ['addMat', data.actor || '', name, qty, data.spec || '', data.expire || ''].join('|')
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     // 已有同名耗材 → 不重复建档，直接提示用已有 ID 入库
     const exists = await getRecords('materials', r => ('' + r.fields[COL.materials.name]).trim() === name)
@@ -1410,7 +1988,9 @@ async function addMaterial(data) {
       [COL.materials.stock]: qty,
       [COL.materials.unit]: unit,
       [COL.materials.safe]: Number(data.safe) || 0,
-      [COL.materials.status]: '正常'
+      [COL.materials.status]: '正常',
+      // 效期：此前只有读取与展示、全库无任何写入 → 库存页的「已过期/临期」提示永远不显示
+      [COL.materials.expire]: expTs
     })
 
     // 建档同时记一笔入库流水，保证「账实相符」
@@ -1464,7 +2044,12 @@ async function importMaterials(data) {
     const unit = ('' + (raw.unit || '')).trim() || '个'
     const safe = Number(raw.safe) || 0
     const setStock = ('' + (raw.stock ?? '')).trim() !== ''
-    const stockNum = setStock ? (Number(raw.stock) || 0) : 0
+    const stockNum = setStock ? parseQty(raw.stock, 0) : 0
+    if (setStock && stockNum === null) { skipped.push({ idx: i + 1, reason: '库存数量不是 0 ~ 1000000 的整数，跳过' }); continue }
+    // 效期：Excel 里常见 2026/3/5、20260305 等形态 → 一并接受；实在认不出的才跳过该行
+    const expParsed = expireTs(raw.expire)
+    if (expParsed === null) { skipped.push({ idx: i + 1, reason: '有效期格式无法识别，跳过' }); continue }
+    const expTs = expParsed.ts
     const existing = (id && byId.get(id)) || byName.get(name)
     if (existing) {
       const f = existing.fields
@@ -1473,6 +2058,9 @@ async function importMaterials(data) {
         [COL.materials.spec]: spec, [COL.materials.cat]: cat, [COL.materials.loc]: loc,
         [COL.materials.unit]: unit, [COL.materials.safe]: safe
       }
+      // 效期：清单里给了才覆盖（留空表示"不改动"，避免误清已录的效期）
+      // 注意用外层已解析好的 expTs（数字）：此前内层又取一次，会把整个对象写进 expire 列
+      if (expTs) patch[COL.materials.expire] = expTs
       if (setStock) patch[COL.materials.stock] = stockNum
       await updateRecord('materials', existing.recordId, patch)
       if (setStock && stockNum !== oldStock) {
@@ -1491,7 +2079,8 @@ async function importMaterials(data) {
       await addRecord('materials', {
         [COL.materials.id]: newId, [COL.materials.name]: name, [COL.materials.spec]: spec,
         [COL.materials.cat]: cat, [COL.materials.loc]: loc, [COL.materials.stock]: stockNum,
-        [COL.materials.unit]: unit, [COL.materials.safe]: safe, [COL.materials.status]: '正常'
+        [COL.materials.unit]: unit, [COL.materials.safe]: safe, [COL.materials.status]: '正常',
+        [COL.materials.expire]: expTs
       })
       if (stockNum > 0) {
         await addRecord('stock_io', {
@@ -1537,7 +2126,8 @@ async function importTools(data) {
     const id = ('' + (raw.id || '')).trim()
     const spec = ('' + (raw.spec || '')).trim()
     const loc = ('' + (raw.loc || '')).trim()
-    const status = ('' + (raw.status || '')).trim() || '正常'
+    // 默认是「在库」而非「正常」：工具以「正常」入库后 borrow/approve 会判定「不在库」无法借出
+    const status = ('' + (raw.status || '')).trim() || '在库'
     const holder = ('' + (raw.holder || '')).trim()
     const existing = (id && byId.get(id)) || byName.get(name)
     if (existing) {
@@ -1577,22 +2167,28 @@ async function io(data) {
   if (!matId) return { code: 400, data: { msg: '请选择耗材' } }
   if (data.type !== 'in' && data.type !== 'out') return { code: 400, data: { msg: '登记方向必须是 in / out' } }
   // 数量服务端兜底：负数量会让「入库」变成变相出库（next<0 校验拦不住正库存下的负入库）
-  const qty = Math.floor(Number(data.qty) || 0)
-  if (qty < 1) return { code: 400, data: { msg: '数量必须是大于 0 的整数' } }
+  const qty = parseQty(data.qty)
+  if (qty === null) return { code: 400, data: { msg: '数量必须是 1 ~ 1000000 之间的整数' } }
   // —— 幂等 + 写锁：窗口内同一操作人对同一耗材同方向同数量的登记只执行第一笔，
   //    重复提交复用第一笔结果（前端 busy 守卫失效时服务端兜底，防双倍扣减）——
-  const idemKey = ['io', data.actor || '', matId, data.type, qty].join('|')
+  // 键里必须带备注：同物品同方向同数量但备注不同（例如分两批到货），
+  // 少了备注 → 5 秒内第二笔会被静默吞掉，库存少加且用户毫无察觉。
+  const idemKey = ['io', data.actor || '', matId, data.type, qty, data.note || ''].join('|')
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     const mats = await getRecords('materials', r => ('' + r.fields[COL.materials.id]) === matId)
     const mat = mats[0]
     if (!mat) return { code: 400, data: { msg: '物品不存在：' + matId } }
     const delta = (data.type === 'in' ? 1 : -1) * qty
-    const cur = Number(mat.fields[COL.materials.stock]) || 0
-    const next = cur + delta
-    if (next < 0) return { code: 400, data: { msg: `库存不足：当前 ${cur}` } }
-    // 库存更新与两条流水写入互不依赖，并行提交
+    // 原子增减（CAS）：把读到的期望值写进条件 → 条件不匹配说明期间被并发改动，重读重试
+    const adj = await atomicAdjustStock(mat.recordId, delta)
+    if (!adj.ok) {
+      if (adj.reason === 'insufficient') return { code: 400, data: { msg: `库存不足：当前 ${adj.stock}` } }
+      if (adj.reason === 'missing') return { code: 400, data: { msg: '物品不存在：' + matId } }
+      throw new Error('库存更新未生效（并发冲突，重试后仍未成功）。请刷新后重试')
+    }
+    const next = adj.stock
+    // 两条流水写入互不依赖，并行提交
     await Promise.all([
-      updateRecord('materials', mat.recordId, { [COL.materials.stock]: next }),
       addRecord('stock_io', {
         [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: matId,
         [COL.stock_io.dir]: TR.ioFwd[data.type] || '入库', [COL.stock_io.qty]: qty,
@@ -1704,12 +2300,15 @@ async function batchIo(data) {
   for (const it of items) {
     const matId = ('' + (it.matId || '')).trim()
     if (!matId) continue
-    const qty = Math.floor(Number(it.qty) || 0)
-    if (qty < 1) return { code: 400, data: { msg: '数量必须是大于 0 的整数：' + matId } }
+    const qty = parseQty(it.qty)
+    if (qty === null) return { code: 400, data: { msg: '数量必须是 1 ~ 1000000 之间的整数：' + matId } }
     merged.set(matId, (merged.get(matId) || 0) + qty)
   }
   if (!merged.size) return { code: 400, data: { msg: '没有有效的登记数据' } }
-  const idemKey = ['batchIo', actor, type].concat([...merged.entries()].map(([k, v]) => k + ':' + v)).join('|')
+  // 幂等键必须带备注与来源：同一物品、同一数量但备注不同（分两批到货）是两次不同的入库。
+  // 键里少了备注 → 5 秒内第二笔被幂等窗口静默吞掉，库存少加，而返回值仍是第一笔的
+  // 「成功」副本（已实测复现：库存 10→15，第二笔 5 卷凭空消失，流水只有 1 条）。
+  const idemKey = ['batchIo', actor, type, data.note || '', data.src || ''].concat([...merged.entries()].map(([k, v]) => k + ':' + v)).join('|')
 
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     const details = []
@@ -1718,11 +2317,16 @@ async function batchIo(data) {
       const mats = await getRecords('materials', r => ('' + r.fields[COL.materials.id]) === matId)
       const mat = mats[0]
       if (!mat) { details.push({ matId, qty, err: '物品不存在' }); continue }
-      const cur = Number(mat.fields[COL.materials.stock]) || 0
-      const next = cur + (type === 'in' ? 1 : -1) * qty
-      if (next < 0) { details.push({ matId, qty, err: '库存不足（当前 ' + cur + '）' }); continue }
+      const delta = (type === 'in' ? 1 : -1) * qty
+      // 原子增减（CAS）：并发批量补货时不会丢更新，也不会把库存扣成负
+      const adj = await atomicAdjustStock(mat.recordId, delta)
+      if (!adj.ok) {
+        if (adj.reason === 'insufficient') { details.push({ matId, qty, err: '库存不足（当前 ' + adj.stock + '）' }); continue }
+        if (adj.reason === 'missing') { details.push({ matId, qty, err: '物品不存在' }); continue }
+        details.push({ matId, qty, err: '并发冲突，重试后仍未成功' }); continue
+      }
+      const next = adj.stock
       await Promise.all([
-        updateRecord('materials', mat.recordId, { [COL.materials.stock]: next }),
         addRecord('stock_io', {
           [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: matId,
           [COL.stock_io.dir]: type === 'in' ? '入库' : '出库', [COL.stock_io.qty]: qty,
@@ -1793,8 +2397,9 @@ async function listStockIO(data) {
       note: f[COL.stock_io.note] || '',
       // 来源类型（P3-㉖）：采购/捐赠/调拨/盘盈/期初/领用出库…让每笔变动都答得出"为什么动"
       src: f[COL.stock_io.src] || '',
-      // 已冲销标记：冲销只是在备注上加前缀，这里显式给前端一个字段，避免前端做字符串匹配
-      reversed: ('' + (f[COL.stock_io.note] || '')).indexOf('[已冲销]') >= 0
+      // 已冲销标记：原流水被打前缀，反向流水本身也已结清，两者都不再显示「冲销」按钮
+      reversed: isSettledFlow(f),
+      cls: ds.readCls(f)
     }
   })
   // 附上物品名，便于列表直接显示
@@ -1821,6 +2426,235 @@ async function listStockIO(data) {
 // logs 表全程写入已久，但只能到腾讯文档里看。管理员想要"谁在哪天做了什么"，
 // 在系统内没有入口。这里提供带筛选与分页的查询。
 // ============================================================
+// ===== 教师端「领用记录」查询 =====
+// 老师此前无法查看「学生领取使用了什么耗材」：
+//   · io 页是出入库操作台，不是查询台；
+//   · approve 页只看待审批，审批完就没了；
+//   · usage 页是聚合统计，看不到逐条明细。
+// 本接口以「申请单」为主表（它带申请人/班级/用途/审批人），联查物品名，
+// 支持按班级/物品/领用人/状态/时间筛选，并受行级隔离约束（老师只看本班+公共）。
+// 待交付清单：审批已通过、但实物还没确认交到学生手里的单子。
+// 审批通过时库存已扣；这里只做「实物发料」的现场确认，不再动账（避免二次扣减）。
+// 默认只看近 30 天的单：上线瞬间历史已通过单会一次性涌出来，30 天窗口可避开。
+async function listDeliveries(data) {
+  const d0 = data || {}
+  const days = Math.max(0, Number(d0.days) || 30)   // 0 = 不限时间窗
+  const showDelivered = !!d0.showDelivered
+  const reqs = await getRecords('requisitions')
+  const mats = await getRecords('materials')
+  const tools = await getRecords('tools')
+  const users = await getRecords('users')
+  const nameOf = {}
+  for (const r of mats) nameOf['' + r.fields[COL.materials.id]] = r.fields[COL.materials.name] || ''
+  for (const r of tools) nameOf['' + r.fields[COL.tools.id]] = r.fields[COL.tools.name] || ''
+  const userOf = {}
+  for (const r of users) {
+    const f = r.fields
+    userOf['' + (f[COL.users.id] || '')] = { name: f[COL.users.name] || '', cls: ('' + (f[COL.users.cls] || '')).trim() }
+  }
+  const dayMs = 86400000
+  const nowMs = Date.now()
+  const p2 = n => ('' + n).padStart(2, '0')
+  const cut = new Date(nowMs - days * dayMs + 8 * 3600 * 1000)
+  const cutStr = `${cut.getUTCFullYear()}-${p2(cut.getUTCMonth() + 1)}-${p2(cut.getUTCDate())} ${p2(cut.getUTCHours())}:${p2(cut.getUTCMinutes())}`
+  const rows = []
+  for (const r of reqs) {
+    const f = r.fields
+    if (('' + (f[COL.requisitions.status] || '')) !== '已通过') continue
+    const delivered = f[COL.requisitions.delivered] || ''
+    if (delivered ? !showDelivered : showDelivered) continue
+    const timeVal = f[COL.requisitions.time]
+    const ts = Number(timeVal) || 0
+    const timeStr = '' + (timeVal || '')
+    if (days > 0) {
+      if (ts) { if (nowMs - ts > days * dayMs) continue }
+      else if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(timeStr)) { if (timeStr < cutStr) continue }
+    }
+    const q = normReq(f)
+    const itemId = '' + (f[COL.requisitions.item] || '')
+    const u = userOf['' + (f[COL.requisitions.user] || '')] || {}
+    rows.push(Object.assign(q, {
+      itemName: nameOf[itemId] || '',
+      userName: u.name || '',
+      userCls: u.cls || '',
+      delivered: delivered ? fmtTs(delivered) : ''
+    }))
+  }
+  rows.sort((a, b) => ('' + b.time).localeCompare('' + a.time))
+  return { rows, total: rows.length }
+}
+
+// 确认交付：把「审批通过但东西还没交」的申请标记为已交付，只留痕「实物已发出」，不再动库存。
+async function confirmDelivery(data) {
+  const no = '' + (data.no || '')
+  if (!no) return { code: 400, data: { msg: '缺少申请单号' } }
+  return withWriteLock(async () => {
+    const reqs = await getRecords('requisitions', r => ('' + r.fields[COL.requisitions.id]) === no)
+    const req = reqs[0]
+    if (!req) return { code: 404, data: { msg: '申请不存在：' + no } }
+    const status = '' + (req.fields[COL.requisitions.status] || '')
+    if (status !== '已通过') {
+      return { code: 400, data: { msg: '只有「已通过」的申请可以确认交付（当前：' + (status || '未知') + '）' } }
+    }
+    if (req.fields[COL.requisitions.delivered]) {
+      return { code: 400, data: { msg: '该单已确认交付，请勿重复操作' } }
+    }
+    // 日志继承申请单班级（申请人是学生，管理员/教师只是代为发料）
+    ds.overrideOwnerCls(ds.readCls(req.fields))
+    const ts = now()
+    await updateRecord('requisitions', req.recordId, { [COL.requisitions.delivered]: ts })
+    await addRecord('logs', {
+      [COL.logs.id]: genNo('L'), [COL.logs.time]: ts, [COL.logs.actor]: data.actor || '',
+      [COL.logs.op]: '确认交付', [COL.logs.target]: no, [COL.logs.result]: '已交付'
+    })
+    return {}
+  })
+}
+
+// 单件工具建档（教师及以上，与耗材建档权限对齐）：
+//   批量导入 importTools 是管理员专属（可按编号/名称覆盖更新台账），
+//   而现场登记一件工具不该有「覆盖」语义，也不该只有管理员能做 → 独立动作。
+async function addTool(data) {
+  const name = ('' + (data.name || '')).trim()
+  if (!name) return { code: 400, data: { msg: '请填写工具名称' } }
+  const spec = ('' + (data.spec || '')).trim()
+  const loc = ('' + (data.loc || '')).trim()
+  const wantId = ('' + (data.id || '')).trim()
+  const idemKey = ['addTool', data.actor || '', name, wantId].join('|')
+  return withWriteIdem(idemKey, () => withWriteLock(async () => {
+    const all = await getRecords('tools')
+    const byName = all.find(r => ('' + (r.fields[COL.tools.name] || '')).trim() === name)
+    if (byName) {
+      return { code: 409, data: { msg: '已有同名工具（' + ('' + byName.fields[COL.tools.id]) + '），请直接给它贴标签，或在批量建档里更新规格' } }
+    }
+    if (wantId) {
+      const byId = all.find(r => ('' + (r.fields[COL.tools.id] || '')).trim().toUpperCase() === wantId.toUpperCase())
+      if (byId) return { code: 409, data: { msg: '该编号已被占用：' + wantId } }
+    }
+    let max = 0
+    for (const r of all) {
+      const m = /^\s*[Tt](\d+)\s*$/.exec('' + r.fields[COL.tools.id])
+      if (m) max = Math.max(max, parseInt(m[1], 10) || 0)
+    }
+    const newId = wantId || ('T' + String(max + 1).padStart(3, '0'))
+    const ts = now()
+    await addRecord('tools', {
+      [COL.tools.id]: newId, [COL.tools.name]: name, [COL.tools.spec]: spec,
+      [COL.tools.loc]: loc, [COL.tools.status]: '在库', [COL.tools.holder]: ''
+    })
+    await addRecord('logs', {
+      [COL.logs.id]: genNo('L'), [COL.logs.time]: ts, [COL.logs.actor]: data.actor || '',
+      [COL.logs.op]: '新增工具', [COL.logs.target]: newId, [COL.logs.result]: '建档成功'
+    })
+    return { id: newId, name, status: '在库' }
+  }))
+}
+
+async function listClaims(data) {
+  const limit = Math.min(200, Math.max(1, Number(data.limit) || 50))
+  const offset = Math.max(0, Number(data.offset) || 0)
+  const clsFilter = ('' + (data.cls || '')).trim()
+  const itemKw = ('' + (data.item || '')).trim().toUpperCase()
+  const userKw = ('' + (data.user || '')).trim().toUpperCase()
+  const status = ('' + (data.status || '')).trim()
+  const from = Number(data.from) || 0
+  const to = Number(data.to) || 0
+
+  const reqs = await getRecords('requisitions')
+  const mats = await getRecords('materials')
+  const nameMap = {}
+  const unitMap = {}
+  for (const r of mats) {
+    const id = '' + r.fields[COL.materials.id]
+    nameMap[id] = r.fields[COL.materials.name] || ''
+    unitMap[id] = r.fields[COL.materials.unit] || ''
+  }
+  // 领用人 → 姓名/班级（申请单里存的是工号，展示要换成姓名）
+  const users = await getRecords('users')
+  const userMap = {}
+  for (const r of users) {
+    const f = r.fields
+    userMap['' + (f[COL.users.id] || '')] = {
+      name: f[COL.users.name] || '',
+      cls: ('' + (f[COL.users.cls] || '')).trim()
+    }
+  }
+
+  const filtered = reqs.filter(r => {
+    const f = r.fields
+    const item = ('' + (f[COL.requisitions.item] || '')).trim()
+    const user = ('' + (f[COL.requisitions.user] || '')).trim()
+    const rc = ds.readCls(f)
+    if (clsFilter && rc !== clsFilter) return false
+    if (itemKw && item.toUpperCase().indexOf(itemKw) < 0) {
+      // 允许按物品名称搜（工号搜不到时用名称）
+      const nm = ('' + (nameMap[item] || '')).toUpperCase()
+      if (nm.indexOf(itemKw) < 0) return false
+    }
+    if (userKw && user.toUpperCase().indexOf(userKw) < 0) {
+      const nm = ('' + ((userMap[user] || {}).name || '')).toUpperCase()
+      if (nm.indexOf(userKw) < 0) return false
+    }
+    if (status && ('' + (f[COL.requisitions.status] || '')).trim() !== status) return false
+    const t = Number(f[COL.requisitions.time]) || 0
+    if (from && t && t < from) return false
+    if (to && t && t > to) return false
+    return true
+  })
+  filtered.sort((a, b) => (Number(b.fields[COL.requisitions.time]) || 0) - (Number(a.fields[COL.requisitions.time]) || 0))
+
+  const total = filtered.length
+  const pageRows = filtered.slice(offset, offset + limit)
+  const rows = pageRows.map(r => {
+    const f = r.fields
+    const item = ('' + (f[COL.requisitions.item] || '')).trim()
+    const user = ('' + (f[COL.requisitions.user] || '')).trim()
+    const u = userMap[user] || {}
+    return {
+      no: f[COL.requisitions.id] || '',
+      item,
+      itemName: nameMap[item] || item,
+      unit: unitMap[item] || '',
+      qty: Number(f[COL.requisitions.qty]) || 0,
+      user,
+      userName: u.name || user,
+      // 流水上的班级优先（领用出库流水继承自申请单），否则回退用户档案班级
+      cls: ds.readCls(f) || u.cls || '',
+      reason: f[COL.requisitions.reason] || '',
+      reject: f[COL.requisitions.reject] || '',
+      approver: f[COL.requisitions.approver] || '',
+      status: TR.reqRev[f[COL.requisitions.status]] || f[COL.requisitions.status] || '',
+      time: fmtTs(f[COL.requisitions.time]) || ''
+    }
+  })
+  // 汇总：按班级统计领用数量（老师最关心"哪个班领了多少"）
+  const byCls = {}
+  filtered.forEach(r => {
+    const f = r.fields
+    const user = ('' + (f[COL.requisitions.user] || '')).trim()
+    const rc = ds.readCls(f) || ((userMap[user] || {}).cls) || ''
+    const key = rc || '未标注班级'
+    if (!byCls[key]) byCls[key] = { cls: key, qty: 0, count: 0 }
+    byCls[key].qty += (Number(f[COL.requisitions.qty]) || 0)
+    byCls[key].count += 1
+  })
+  return {
+    rows,
+    total,
+    offset,
+    limit,
+    hasMore: offset + rows.length < total,
+    byCls: Object.values(byCls).sort((a, b) => b.qty - a.qty),
+    classOptions: Array.from(new Set(
+      filtered.map(r => {
+        const f = r.fields
+        const user = ('' + (f[COL.requisitions.user] || '')).trim()
+        return ds.readCls(f) || ((userMap[user] || {}).cls) || ''
+      }).filter(Boolean)
+    )).sort()
+  }
+}
+
 async function listLogs(data) {
   const recs = await getRecords('logs')
   const actor = ('' + (data.actor || '')).trim().toUpperCase()
@@ -1847,7 +2681,8 @@ async function listLogs(data) {
     return {
       id: f[COL.logs.id] || '', time: fmtTs(f[COL.logs.time]) || '',
       actor: f[COL.logs.actor] || '', op: f[COL.logs.op] || '',
-      target: f[COL.logs.target] || '', result: f[COL.logs.result] || ''
+      target: f[COL.logs.target] || '', result: f[COL.logs.result] || '',
+      cls: ds.readCls(f)
     }
   })
   return { rows, total, offset, limit, hasMore: offset + rows.length < total }
@@ -1882,7 +2717,8 @@ async function listAccess(data) {
     return {
       id: f[COL.access.id] || '', time: fmtTs(f[COL.access.time]) || '',
       user: f[COL.access.user] || '', point: f[COL.access.point] || '',
-      result: f[COL.access.result] || ''
+      result: f[COL.access.result] || '',
+      cls: ds.readCls(f)
     }
   })
   return { rows, total, offset, limit, hasMore: offset + rows.length < total }
@@ -1902,8 +2738,8 @@ async function reverseIO(data) {
     const rec = list[0]
     if (!rec) return { code: 404, data: { msg: '流水不存在：' + no } }
     const f = rec.fields
-    if (('' + (f[COL.stock_io.note] || '')).indexOf('[已冲销]') >= 0) {
-      return { code: 400, data: { msg: '该流水已冲销过，不可重复冲销' } }
+    if (isSettledFlow(f)) {
+      return { code: 400, data: { msg: '该流水已冲销或本身就是冲销产生的反向流水，不可再次冲销' } }
     }
     const matId = '' + (f[COL.stock_io.item] || '')
     const mats = await getRecords('materials', r => ('' + r.fields[COL.materials.id]) === matId)
@@ -1916,19 +2752,28 @@ async function reverseIO(data) {
     const stock = Number(mat.fields[COL.materials.stock]) || 0
     const next = dir === '入库' ? stock - qty : stock + qty
     if (next < 0) return { code: 400, data: { msg: '冲销后库存为负（当前 ' + stock + '，需退回 ' + qty + '）' } }
+    // 反向流水与冲销日志必须跟随原流水的班级，否则按班级对账时「原单一笔、冲销单看不到」，
+    // 且管理员（ownerCls 多为空）操作后会退化成公共资源，对所有老师可见。
+    const reverseCls = ds.readCls(f)
+    // 原子回滚（CAS）：期望值进条件 → 并发冲销/领用不会把库存改错
+    const adj = await atomicAdjustStock(mat.recordId, dir === '入库' ? -qty : qty)
+    if (!adj.ok) {
+      if (adj.reason === 'insufficient') return { code: 400, data: { msg: '冲销后库存为负（当前 ' + adj.stock + '，需退回 ' + qty + '）' } }
+      if (adj.reason === 'missing') return { code: 400, data: { msg: '关联物品不存在：' + matId } }
+      throw new Error('冲销未完全生效（流水 ' + no + '）：库存并发冲突，重试后仍未成功。请刷新后重试')
+    }
     await Promise.all([
-      updateRecord('materials', mat.recordId, { [COL.materials.stock]: next }),
       updateRecord('stock_io', rec.recordId, { [COL.stock_io.note]: '[已冲销] ' + (f[COL.stock_io.note] || '') }),
-      addRecord('stock_io', {
+      addRecord('stock_io', Object.assign({
         [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: matId,
         [COL.stock_io.dir]: backDir, [COL.stock_io.qty]: qty,
         [COL.stock_io.op]: data.actor, [COL.stock_io.time]: now(),
         [COL.stock_io.note]: '冲销流水 ' + no, [COL.stock_io.src]: '冲销'
-      }),
-      addRecord('logs', {
+      }, reverseCls ? { [COL.stock_io.cls]: reverseCls } : {})),
+      addRecord('logs', Object.assign({
         [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor,
         [COL.logs.op]: '冲销出入库流水', [COL.logs.target]: no, [COL.logs.result]: '已冲销'
-      })
+      }, reverseCls ? { [COL.logs.cls]: reverseCls } : {}))
     ])
     if (!(await verifyStock(matId, next))) {
       throw new Error('冲销未完全生效（流水 ' + no + '）：库存可能未回滚。请刷新后重试')
@@ -1956,17 +2801,37 @@ async function borrow(data) {
     }
     const borrowPayload = () => ({
       [COL.borrow.id]: genNo('B'), [COL.borrow.user]: user, [COL.borrow.tool]: toolId,
-      [COL.borrow.out]: now(), [COL.borrow.plan]: planDue(data.days), [COL.borrow.in]: '', [COL.borrow.status]: '借出中'
+      [COL.borrow.out]: now(), [COL.borrow.plan]: planDue(data.days), [COL.borrow.in]: '', [COL.borrow.status]: '借出中',
+      // 借出备注：用途、临时借用说明等（教师直接借出与审批通过两条路径共用）
+      [COL.borrow.note]: ('' + (data.note || '')).trim().slice(0, 120)
     })
+    // 原子切换工具状态（CAS）：状态仍是「在库」才借出 → 同一件工具不会被并发借出两次
+    const toolSw = await atomicSwitchToolStatus(tool.recordId, '在库', '借出', { [COL.tools.holder]: user })
+    // CAS 未命中 = 工具已被别人借走 → 与串行路径同口径回 400（不是 500 服务器故障）
+    if (!toolSw) return { code: 400, data: { msg: '该工具不在库（已被他人借走）：' + toolId } }
     await Promise.all([
-      updateRecord('tools', tool.recordId, { [COL.tools.status]: '借出', [COL.tools.holder]: user }),
       addRecord('borrow', borrowPayload()),
-      addRecord('logs', { [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: user, [COL.logs.op]: '借出工具', [COL.logs.target]: toolId, [COL.logs.result]: '借出中' })
+      // actor=操作人（教师直接借出时是老师），user=实际借用人；自借时两者相同
+      addRecord('logs', { [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor || user, [COL.logs.op]: '借出工具', [COL.logs.target]: toolId, [COL.logs.result]: '借出中' })
     ])
     if (!(await verifyToolOut(toolId, tool, user, borrowPayload))) {
       throw new Error('借出未完全生效（工具 ' + toolId + '）。请刷新后重试；若仍失败，请到腾讯文档核对')
     }
     return {}
+  })
+}
+
+// 教师直接借出：不必等学生申请，登记「某工具现在借给了某人」。
+// 归属班级跟随【借用人】而非操作老师，确保流水落在借用人本班、任课教师可见、按班对账正确。
+async function directBorrow(data) {
+  const borrowerId = ('' + (data.borrower || '')).trim().toUpperCase()
+  if (!borrowerId) return { code: 400, data: { msg: '请填写借用工号' } }
+  const fu = await findUser(borrowerId)
+  if (!fu || !fu.user) return { code: 404, data: { msg: '借用人不存在或已停用：' + borrowerId } }
+  ds.overrideOwnerCls(fu.user.cls || '')
+  return borrow({
+    toolId: data.toolId, user: fu.user.id, actor: data.actor,
+    days: data.days, reason: data.reason, note: data.note
   })
 }
 
@@ -1986,20 +2851,29 @@ async function returnTool(data) {
     const tools = await getRecords('tools', r => ('' + r.fields[COL.tools.id]) === toolId)
     const tool = tools[0]
     const toolStatus = tool ? ('' + (tool.fields[COL.tools.status] || '')) : ''
+    const backNote = ('' + (data.note || '')).trim().slice(0, 120)
     const needRepair = !!tool && toolStatus === '借出'
     if (!rec && !needRepair) {
-      throw new Error('没有可归还的记录：' + toolId +
-        (tool ? '（当前状态：' + (toolStatus || '未知') + '）' : '（工具不存在）'))
+      // 这是用户操作问题（重复归还 / 工具从未借出），不是服务器故障 →
+      // 必须回 400 业务错误；用 throw 会被当成 500，前端只能显示"操作失败"，
+      // 老师看不出到底是自己重复归还了还是系统坏了。
+      return { code: 400, data: { msg: '没有可归还的记录：' + toolId +
+        (tool ? '（当前状态：' + (toolStatus || '未知') + '）' : '（工具不存在）') } }
     }
     // ① 先修工具行（带校验；失败会抛错，此时 borrow 未动，重试可收敛）
     if (needRepair) await repairToolRow('tools', tool.recordId)
     // ② 再结清借还记录
     if (rec) {
-      await updateRecord('borrow', rec.recordId, { [COL.borrow.status]: '已归还', [COL.borrow.in]: now() })
+      await updateRecord('borrow', rec.recordId, {
+        [COL.borrow.status]: '已归还', [COL.borrow.in]: now(),
+        // 归还入库时的验收备注（完好/缺件/需维修）
+        [COL.borrow.backNote]: backNote
+      })
     } else {
       console.warn('[tencentdocs] returnTool 自愈：' + toolId + ' 无「借出中」借还记录，已直接修复工具行')
     }
-    await addRecord('logs', { [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor, [COL.logs.op]: '归还工具', [COL.logs.target]: toolId, [COL.logs.result]: '已归还' })
+    await addRecord('logs', { [COL.logs.id]: genNo('L'), [COL.logs.time]: now(), [COL.logs.actor]: data.actor, [COL.logs.op]: '归还工具', [COL.logs.target]: toolId,
+      [COL.logs.result]: '已归还' + (backNote ? '：' + backNote : '') })
     return { healed: !rec }
   })
 }
@@ -2017,6 +2891,12 @@ async function repairToolRow(sheetKey, recordId) {
   let lastErr = ''
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
+      if (sheetKey === 'tools') {
+        // 原子切换（CAS）：状态仍是「借出」才置为在库 → 不会覆盖并发发生的新借出
+        const sw = await atomicSwitchToolStatus(recordId, '借出', '在库', { [COL.tools.holder]: '' })
+        if (sw) return true
+      }
+      // CAS 未命中（状态本就不是「借出」，属于状态异常）：走无条件修复 + 回读校验
       await updateRecord(sheetKey, recordId, {
         [COL.tools.status]: '在库',
         [COL.tools.holder]: attempt === 1 ? [{ type: 'text', text: '' }] : []
@@ -2047,7 +2927,12 @@ async function access(data) {
 // ============================================================
 // CSV 转义：值里有分隔符/引号/换行时必须加引号并把内部引号翻倍，否则整行错位
 function csvCell(v) {
-  const s = (v === null || v === undefined) ? '' : '' + v
+  let s = (v === null || v === undefined) ? '' : '' + v
+  // CSV 公式注入防护：以 = + - @ 开头（含前导空白）的单元格会被 Excel/WPS 当成公式执行，
+  //   清单里若被塞进 =HYPERLINK(...) 之类，打开导出的 CSV 就会触发钓鱼；
+  //   同时合法值（「+5V模块」「-40℃环境」）也会被 Excel 显示成 #NAME?。
+  // 前置单引号 → Excel 按文本处理，粘贴后仍显示原值；导入侧 unguardFormula 会还原。
+  if (/^[\s]*[=+\-@]/.test(s)) s = "'" + s
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
 }
 function csvLines(header, rows) {
@@ -2070,18 +2955,24 @@ async function exportData(data) {
 
   if (kind === 'materials') {
     const list = await getRecords('materials')
-    header = ['耗材ID', '名称', '规格', '类别', '存放位置', '当前库存', '单位', '预警线']
+    // 列序必须与「批量建档导入」的解析顺序一致（名称在前、编号在后）：
+    //   此前导出是「耗材ID,名称,…,当前库存,单位,…」而导入按「名称,编号,…,单位,期初库存,…」解析，
+    //   导致用户「导出→改→再导入」会把 ID 当成名称、单位当库存数，把台账写坏。
+    //   导出再带上「有效期」，否则往返一次效期就没了。
+    header = ['名称', '耗材ID', '规格', '类别', '存放位置', '单位', '当前库存', '预警线', '有效期']
     rows = list.map(r => { const f = r.fields; return [
-      f[COL.materials.id], f[COL.materials.name], f[COL.materials.spec] || '', f[COL.materials.cat] || '',
-      f[COL.materials.loc] || '', Number(f[COL.materials.stock]) || 0, f[COL.materials.unit] || '',
-      Number(f[COL.materials.safe]) || 0
+      f[COL.materials.name], f[COL.materials.id], f[COL.materials.spec] || '', f[COL.materials.cat] || '',
+      f[COL.materials.loc] || '', f[COL.materials.unit] || '', Number(f[COL.materials.stock]) || 0,
+      Number(f[COL.materials.safe]) || 0,
+      f[COL.materials.expire] ? fmtTs(f[COL.materials.expire]) : ''
     ] })
     name = '耗材库存清单'
   } else if (kind === 'tools') {
     const list = await getRecords('tools')
-    header = ['工具ID', '名称', '规格', '存放位置', '状态', '当前持有人']
+    // 列序与「批量建档导入」一致（名称在前、编号在后），否则导出再导入会写坏
+    header = ['名称', '工具ID', '规格', '存放位置', '状态', '当前持有人']
     rows = list.map(r => { const f = r.fields; return [
-      f[COL.tools.id], f[COL.tools.name], f[COL.tools.spec] || '', f[COL.tools.loc] || '',
+      f[COL.tools.name], f[COL.tools.id], f[COL.tools.spec] || '', f[COL.tools.loc] || '',
       f[COL.tools.status] || '', f[COL.tools.holder] || ''
     ] })
     name = '工具台账'
@@ -2159,9 +3050,9 @@ async function stocktake(data) {
   for (const it of items) {
     const matId = ('' + (it.matId || '')).trim()
     if (!matId) continue
-    const real = Math.floor(Number(it.real))
-    if (!Number.isFinite(real) || real < 0) {
-      return { code: 400, data: { msg: '实盘数量必须是不小于 0 的整数：' + matId } }
+    const real = parseQty(it.real, 0)
+    if (real === null) {
+      return { code: 400, data: { msg: '实盘数量必须是 0 ~ 1000000 之间的整数：' + matId } }
     }
     clean.push({ matId, real })
   }
@@ -2188,8 +3079,11 @@ async function stocktake(data) {
       if (diff === 0) { unchanged++; details.push({ matId: it.matId, book, real: it.real, diff: 0 }); continue }
       const next = it.real
       if (next < 0) { details.push({ matId: it.matId, err: '调整后为负，已跳过' }); continue }
+      // 原子写实盘（CAS）：条件是读到的账面值 → 盘点与领用并发时不会互相覆盖
+      const adj = await casUpdate('materials', mat.recordId,
+        { [COL.materials.stock]: book }, { [COL.materials.stock]: next })
+      if (!adj.ok) { details.push({ matId: it.matId, name: mat.fields[COL.materials.name] || '', book, real: it.real, diff, err: '库存已被并发改动，请重新盘点' }); continue }
       await Promise.all([
-        updateRecord('materials', mat.recordId, { [COL.materials.stock]: next }),
         addRecord('stock_io', {
           [COL.stock_io.id]: genNo('S'), [COL.stock_io.item]: it.matId,
           [COL.stock_io.dir]: diff > 0 ? '入库' : '出库', [COL.stock_io.qty]: Math.abs(diff),
@@ -2343,6 +3237,8 @@ async function usage() {
   // 低库存预警清单（P2-⑳ 的数据源）：把"有几条低于安全线"变成"是哪几条"
   const lowStock = mats
     .map(r => normMaterial(r.fields))
+    // 低库存阈值口径必须与前端一致（前端 4 处均为 stock < safe）：库存恰好等于安全线视为「已达标」
+    // 不预警。后端曾用 <= → 统计页「低库存物品数」与库存页/补货列表对不上（老师按简报去补货却找不到该项）。
     .filter(m => m.safe > 0 && m.stock < m.safe)
     .sort((a, b) => (a.stock / Math.max(1, a.safe)) - (b.stock / Math.max(1, b.safe)))
 
@@ -2375,10 +3271,17 @@ async function usage() {
 async function snapshot() {
   // 局部名避开与导出函数 access/borrow 同名（原实现用 access/borrow 作数组名，遮蔽同名函数，
   // 可读性差且未来在函数体内调用 borrow()/access() 会直接拿到数组而崩溃）。
-  const [userRows, materialRows, toolRows, reqRows, borrowRows, ioRows, accessRows, logRows] = await Promise.all([
+  // labs/repairs/inspections 是云库专属集合，腾讯文档侧只有占位 ID。
+  // 若误在 DATA_BACKEND=tencent 下备份，这三表读不到属预期，返回空数组而不是让整份备份崩溃。
+  const safeGet = async (key) => {
+    try { return await getRecords(key) } catch (e) { console.warn('[snapshot] 跳过不可用表 ' + key + '：' + (e && e.message)); return [] }
+  }
+  const [userRows, materialRows, toolRows, reqRows, borrowRows, ioRows, accessRows, logRows,
+    labRows, repairRows, inspectionRows] = await Promise.all([
     getRecords('users'), getRecords('materials'), getRecords('tools'),
     getRecords('requisitions'), getRecords('borrow'), getRecords('stock_io'),
-    getRecords('access'), getRecords('logs')
+    getRecords('access'), getRecords('logs'),
+    safeGet('labs'), safeGet('repairs'), safeGet('inspections')
   ])
   // 用户与角色：对齐 adminListUsers 的富形态（含 rid / bound，不下发 openid），并附角色汇总，
   // 使全量快照成为管理员的系统全景入口（与「用户与角色」管理页同源）。
@@ -2388,6 +3291,7 @@ async function snapshot() {
       return {
         rid: r.recordId,
         id: u.id, name: u.name, role: u.role, cls: u.cls,
+        managedClasses: u.managedClasses || '',
         status: u.status,
         bound: !!(u.openid && ('' + u.openid).trim())
       }
@@ -2403,7 +3307,13 @@ async function snapshot() {
     borrow: borrowRows.map(r => normBorrow(r.fields)),
     stock_io: ioRows.map(r => normStockIO(r.fields)),
     access: accessRows.map(r => normAccess(r.fields)),
-    logs: logRows.map(r => normLog(r.fields))
+    logs: logRows.map(r => normLog(r.fields)),
+    // 备份必须覆盖全部 11 张表：此前漏掉实训室/报修/巡检，恢复后这三块业务数据会永久丢失。
+    labs: labRows.map(r => normLab(r.fields)),
+    repairs: repairRows.map(r => normRepair(r.fields)),
+    inspections: inspectionRows.map(r => normInspection(r.fields)),
+    generatedAt: now(),
+    version: 1
   }
 }
 
@@ -2435,7 +3345,8 @@ function normRepair(f) {
     status: f[COL.repairs.status] || '待处理', priority: f[COL.repairs.priority] || '一般',
     handlerId: f[COL.repairs.handlerId] || '', handlerName: f[COL.repairs.handlerName] || '',
     resolvedNote: f[COL.repairs.resolvedNote] || '',
-    createdAt: fmtTs(f[COL.repairs.createdAt]), updatedAt: fmtTs(f[COL.repairs.updatedAt])
+    createdAt: fmtTs(f[COL.repairs.createdAt]), updatedAt: fmtTs(f[COL.repairs.updatedAt]),
+    cls: ds.readCls(f)
   }
 }
 // 计划日期当日 23:59:59（+08:00）时间戳，用于"逾期"判定（与 io.js dayEnd 同口径）
@@ -2453,7 +3364,8 @@ function normInspection(f) {
     title: f[COL.inspections.title] || '', planDate,
     executorId: f[COL.inspections.executorId] || '', executorName: f[COL.inspections.executorName] || '',
     status, result: f[COL.inspections.result] || '', overdue,
-    createdAt: fmtTs(f[COL.inspections.createdAt]), doneAt: fmtTs(f[COL.inspections.doneAt])
+    createdAt: fmtTs(f[COL.inspections.createdAt]), doneAt: fmtTs(f[COL.inspections.doneAt]),
+    cls: ds.readCls(f)
   }
 }
 
@@ -2542,7 +3454,10 @@ async function addRepair(data) {
   const labId = ('' + (data.labId || '')).trim().toUpperCase()
   if (!title) return { code: 400, data: { msg: '请填写报修内容' } }
   if (!labId) return { code: 400, data: { msg: '请选择归属实训室' } }
-  const idemKey = ['addRepair', data.actor || '', labId, title].join('|')
+  // 幂等键要能区分两次不同的报修：同一教师对同一实训室报两条同名故障（如两盏灯都坏，
+  // 都写「灯管坏」）是两次独立报修 → 键里少了区分字段时第二单被幂等窗口吞掉，
+  // 返回第一条的单号、库里只剩一条，故障记录凭空消失（已实测复现）。
+  const idemKey = ['addRepair', data.actor || '', labId, title, (data.category || ''), (data.desc || ''), (data.priority || '')].join('|')
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     const lab = await getLab(labId)
     if (!lab) return { code: 404, data: { msg: '归属实训室不存在' } }
@@ -2580,13 +3495,14 @@ async function updateRepair(data) {
 async function listInspections(filter) {
   const f = filter || {}
   const list = await getRecords('inspections')
+  // 归一化后 createdAt 已是展示字符串，必须在此之前按原始时间戳排序
+  list.sort((a, b) => (Number(b.fields[COL.inspections.createdAt]) || 0) - (Number(a.fields[COL.inspections.createdAt]) || 0))
   let arr = list.map(r => normInspection(r.fields))
   if (f.labId) arr = arr.filter(x => ('' + x.labId).trim().toUpperCase() === ('' + f.labId).trim().toUpperCase())
   if (f.status) {
     if (f.status === '已逾期') arr = arr.filter(x => x.status === '待巡检' && x.overdue)
     else arr = arr.filter(x => x.status === f.status)
   }
-  arr.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0))
   return arr
 }
 async function addInspection(data) {
@@ -2594,7 +3510,8 @@ async function addInspection(data) {
   const labId = ('' + (data.labId || '')).trim().toUpperCase()
   if (!title) return { code: 400, data: { msg: '请填写巡检任务名称' } }
   if (!labId) return { code: 400, data: { msg: '请选择归属实训室' } }
-  const idemKey = ['addInsp', data.actor || '', labId, title].join('|')
+  // 同理：同名同实训室的巡检任务是两次独立任务，计划日期/执行人都不同则不能被判为重复
+  const idemKey = ['addInsp', data.actor || '', labId, title, (data.planDate || ''), (data.executorId || '')].join('|')
   return withWriteIdem(idemKey, () => withWriteLock(async () => {
     const lab = await getLab(labId)
     if (!lab) return { code: 404, data: { msg: '归属实训室不存在' } }
@@ -2603,8 +3520,9 @@ async function addInspection(data) {
     await addRecord('inspections', {
       [COL.inspections.id]: newId, [COL.inspections.labId]: labId, [COL.inspections.labName]: lab.name,
       [COL.inspections.title]: title, [COL.inspections.planDate]: ('' + (data.planDate || '')).trim(),
-      [COL.inspections.executorId]: ('' + (data.actor || '')).trim(),
-      [COL.inspections.executorName]: ('' + (data.executorName || data.actor || '')).trim(),
+      // 执行人可指派：executorId 为空时默认创建人；有值时按指派写入（建单即派活）
+      [COL.inspections.executorId]: ('' + (data.executorId || data.actor || '')).trim(),
+      [COL.inspections.executorName]: ('' + (data.executorName || data.executorId || data.actor || '')).trim(),
       [COL.inspections.status]: '待巡检', [COL.inspections.result]: '',
       [COL.inspections.createdAt]: ts, [COL.inspections.doneAt]: ''
     })
@@ -2635,18 +3553,47 @@ async function labOverview(labId) {
   return { lab, repairs: reps, inspections: insps }
 }
 
+// 清空全库数据（super 专属，须二次确认；见 index.js case 'clearAllData'）。
+// 默认保留 users 表——否则把执行清库的 super 账号自身也删掉，会导致无人可登录的鸡生蛋死锁。
+// opts.includeUsers === true 时显式连用户表一起清（调用方需自担"清完无法登录"后果）。
+// 逐表 getRecords → deleteRecordByIds，逐表计数；单表失败不影响其余表，结果里如实回报。
+async function clearAllData(opts) {
+  const o = opts || {}
+  const includeUsers = o.includeUsers === true
+  const allTables = ['requisitions', 'borrow', 'stock_io', 'access', 'logs', 'repairs', 'inspections', 'labs', 'tools', 'materials', 'users']
+  const targets = allTables.filter(t => includeUsers || t !== 'users')
+  const result = { cleared: {}, skipped: [], errors: [], total: 0, includeUsers }
+  for (const t of targets) {
+    if (t === 'users' && !includeUsers) { result.skipped.push(t); continue }
+    try {
+      const rows = await getRecords(t, null, { noCache: true })
+      const ids = rows.map(r => r.recordId).filter(Boolean)
+      const n = ids.length ? await deleteRecordByIds(t, ids) : 0
+      result.cleared[t] = n
+      result.total += n
+    } catch (e) {
+      result.errors.push({ table: t, msg: (e && e.message) || String(e) })
+      result.cleared[t] = 0
+    }
+  }
+  return result
+}
+
 module.exports = {
   TABLE, CFG, COL, TR, runtimeInfo, warmFieldMaps,
   getToken, authorizeWithCode, callSmart, callApi, getFieldMap, buildValues,
   getRecords, addRecord, updateRecord, deleteRecordByIds, getItem,
+  casUpdate, atomicAdjustStock, atomicSwitchToolStatus,
   invalidateCache, cacheStats, clearFieldMapCache,
   listMaterials, listTools, listMine, listPending, search,
   findUser, listUsers, ensureOpenIdColumn, bindOpenId, findUserByOpenId, findUserByRobotKey, setRobotKey, whoami, bindLogin,
-  adminListUsers, adminUpsertUser, adminDeleteUser, decideUserWrite, decideUserDelete,
-  requisition, toolRequisition, approve, cancelReq, io, borrow, returnTool, access, usage, snapshot,
-  addMaterial, listStockIO, exportData, stocktake, listLogs, reverseIO, batchIo, listAccess, importMaterials, importTools,
+  adminListUsers, listAllUsersForAudit, listStaff, adminUpsertUser, adminDeleteUser, adminUnbindUser, decideUserWrite, decideUserDelete,
+  requisition, toolRequisition, approve, revokeApprove, batchReject, cancelReq, io, borrow, directBorrow, returnTool, access, usage, snapshot,
+  addMaterial, addTool, listStockIO, listClaims, listDeliveries, confirmDelivery, exportData, stocktake, listLogs, reverseIO, batchIo, listAccess, importMaterials, importTools,
   // 实训室归属管理体系（labs / repairs / inspections）
   listLabs, getLab, addLab, updateLab, deleteLab,
   listRepairs, addRepair, updateRepair,
-  listInspections, addInspection, updateInspection, labOverview
+  listInspections, addInspection, updateInspection, labOverview,
+  // 清库（super 专属，二次确认；默认保留 users）
+  clearAllData
 }

@@ -74,12 +74,13 @@ function loadBackend(kind, requireFn) {
 //     于是用户看到 code:0「成功」而云端什么都没写。
 // 故：写操作只允许在 PRIMARY（i===0）执行，主后端失败即报错，绝不静默回退。
 const WRITE_ACTIONS = new Set([
-  'requisition', 'toolRequisition', 'cancelReq', 'io', 'batchIo', 'approve', 'addMaterial',
-  'stocktake', 'borrow', 'returnTool', 'access', 'reverseIO', 'bindLogin',
+  'requisition', 'toolRequisition', 'cancelReq', 'io', 'batchIo', 'approve', 'revokeApprove', 'batchReject', 'addMaterial',
+  'stocktake', 'borrow', 'directBorrow', 'returnTool', 'access', 'reverseIO', 'bindLogin',
   'genRobotKey', 'revokeRobotKey',
   'addLab', 'updateLab', 'deleteLab', 'addRepair', 'updateRepair',
-  'addInspection', 'updateInspection', 'adminUpsertUser', 'adminDeleteUser',
-  'importMaterials', 'importTools'
+  'addInspection', 'updateInspection', 'adminUpsertUser', 'adminDeleteUser', 'adminUnbindUser',
+  'clearAllData', 'migrate', 'importMaterials', 'importTools',
+  'confirmDelivery', 'addTool'
 ])
 function isWriteAction(a) { return WRITE_ACTIONS.has(a) }
 
