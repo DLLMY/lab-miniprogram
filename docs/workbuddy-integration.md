@@ -1,6 +1,6 @@
-# 实训室管理系统 × WorkBuddy 自然语言操作（集成指南）
+# 阿磊的工具箱 × WorkBuddy 自然语言操作（集成指南）
 
-> 目标：每位老师都能**用自己的 WorkBuddy**，用自然语言查询与处理「万州职教中心·实训室管理系统」的数据，
+> 目标：每位老师都能**用自己的 WorkBuddy**，用自然语言查询与处理「万州职教中心·阿磊的工具箱」的数据，
 > 例如「查一下 A 柜有哪些物料」「列出我名下待处理报修」「帮我提交一个实训室报修」。
 > 每位老师以**自己的教师身份**接入，权限与其微信端完全一致。
 
@@ -86,17 +86,44 @@ CloudBase 集合读取 → 返回 {code:0, data}
 
 > 方案 B 下，`TCB_SECRET_ID/KEY/ENV` 三者填齐连接器即自动走 SDK 直连；`DOCS_PROXY_ROBOT_KEY` 每位老师填**自己的**个人密钥。管理员用全局超级钥匙 `ROBOT_KEY` 可获全校视角。
 
+#### B.1 绑定后必做：用 `lab_whoami` 核对身份（防误操作）
+
+> 这是防止「以为自己是老师、实际却是超管」的第一道自查。**每位老师第一次绑定、以及每次换密钥后，都要先调用一次 `lab_whoami`。**
+
+直接在 WorkBuddy 里说「查一下我以什么身份在操作」，它会调用 `lab_whoami`，返回服务端按密钥反查的**真实身份**（不信任客户端传参）：
+
+| 返回字段 | 含义 | 老师应看到的值 |
+|---|---|---|
+| `role` | 服务端角色 | `teacher`（教师） |
+| `channelLabel` | 通道类型 | `个人机器人密钥（本人权限）` |
+| `scopeLabel` | 数据可见范围 | `仅本班：2024级电气1班、…`（与自己带班一致） |
+| `warning` | 风险提示 | 教师正常情况为空 |
+
+**三条红线判定**：
+- 若 `role` 显示 `super` 或 `channelLabel` 显示 `全局超级钥匙` → **你用的是管理员超级钥匙，权限是全校！立即停止操作**，向管理员索取正确密钥。超级钥匙绝不下发普通教师。
+- 若 `scopeLabel` 显示 `全部班级（无行级过滤）` 而你不是管理员 → 同样异常，停止操作并上报。
+- 若 `scopeLabel` 显示 `仅本班：（未配置带班…）` → 你的账号漏配带班班级，看不到任何班级流水，联系管理员补充。
+
+**越权时系统会主动拦截**：无效密钥、已吊销密钥、编造的密钥一律返回 `401`，不会退回"未登录全通"；跨班读写返回 `403`。详见本节末尾「机器通道安全加固」。
+
 ---
 
 ## 四、能力范围与验证
 
-**只读（直接执行）**：`lab_query` 支持 `getItem / listMaterials / listTools / pending / usage / listLabs / listRepairs / listInspections / alerts`；另有 `lab_diag`（运行态）、`lab_overview`（按实训室汇总）、`lab_context`（读会话记忆）、`lab_forget`（清会话记忆）。
+**只读（直接执行）**：`lab_query` 支持 `getItem / listMaterials / listTools / pending / usage / listLabs / listRepairs / listInspections / alerts`；另有 `lab_whoami`（身份自查，建议每个会话先调用）、`lab_diag`（运行态）、`lab_overview`（按实训室汇总）、`lab_context`（读会话记忆）、`lab_forget`（清会话记忆）。
 - `alerts`（预警聚合）：一次返回 `lowStock`（低于预警线物料）、`overdueInspections`（逾期巡检）、`pendingApprovals`（待审批领用）三项，供每日推送使用，避免逐表查询。
 
 **写操作（L1 确认门）**：`lab_write` 支持 `requisition / toolRequisition / cancelReq / io / borrow / returnTool / approve / addMaterial / stocktake / addRepair / updateRepair / addInspection / updateInspection`。
 - 首次调用返回：`⚠ 需确认：<操作摘要> [确认码 Cxxx] 请回复「确认执行」或调用 lab_confirm 完成。`
 - 老师确认后，WorkBuddy 调用 `lab_confirm`（可带确认码指定某条）才真正写入。
 - 管理员专属动作（`addLab/updateLab/deleteLab/adminUpsertUser/adminDeleteUser/reverseIO/migrate`）**不开放**给通用连接器，仍走微信端或 `ROBOT_KEY` 超级应急通道。
+
+**用户角色层级（创建/管理/删除账号的权限边界）**：`super(3) > admin(2) > teacher(1) > student(0)`。
+- **超级管理员**：可创建/管理/删除任意角色（含授予/撤销超级管理员、管理其它管理员、改自己身份）。
+- **管理员**：仅可创建/管理/删除 **严格低于自身层级** 的角色 —— 即 **教师、学生**（不可创建/管理 管理员、超级管理员）。
+- **教师**：仅可创建/管理/删除 **学生**（不可创建/管理 教师、管理员、超级管理员）。
+- **学生**：不可操作用户。
+- 以上由 `clouddb.js` / `tencentdocs.js` 的 `decideUserWrite` / `decideUserDelete` 统一裁决（两适配器行为一致），`adminListUsers` 也按调用者层级服务端过滤（非 super 仅看到可管理账号）。回归见 `tools/test-rbac.js`。
 
 **验证**：
 1. 问「显示系统运行态」→ `lab_diag` 回 `backend=cloud`、物料条数。
@@ -136,11 +163,15 @@ CloudBase 集合读取 → 返回 {code:0, data}
 
 - **个人密钥哈希存储**：服务端只存 `SHA-256(pepper + 密钥)`，DB 泄露也无法反推明文；明文仅生成时展示一次。
 - **可独立吊销**：教师在「我的」页吊销后，任何 WorkBuddy 连接立即失效，需重新生成。
-- **fail-closed**：`ROBOT_KEY` 未配置 → 外部 HTTP 调用只能走公开接口；robotKey 匹配不到任何 `robotKeyHash` → 拒绝。
-- **权限同微信端**：个人密钥反查出的教师身份跑 `prodHandler`，走 `gStaff` 闸门、`data.actor=工号`，动不了别人的、也动不了管理员功能。
-- **绝不共享超级钥匙**：`ROBOT_KEY`（全局超级钥匙）只留给管理员应急，绝不分发教师；教师一律用个人密钥。
-- **密钥管理仅限微信登录态**：`genRobotKey/revokeRobotKey` 通过 robot 通道被显式禁止，防密钥被远程改写。
+- **机器通道 fail-closed（核心越权闸）**：只要请求携带 `robotKey` 就进入机器通道，**必须**反查到真实用户；反查失败（密钥无效 / 编造 / 已吊销 / 账号停用）一律返回 `401`，**绝不降级为"未登录 = full 全通"**。
+  - 背景：`scopeOf(null)` 设计为 `full=true`（未登录只读公开数据)。若机器通道解析失败落到这个分支，任何持假密钥的外部调用都能拉全库、绕开班级隔离。此闸门位于两个身份反查分支之后、`scopeOf` 之前，彻底堵死该路径。
+  - 微信端（`openid` 存在、无 `robotKey`）不受影响，行为不变。
+- **权限同微信端**：个人密钥反查出的教师身份跑 `prodHandler`，走 `gStaff` 闸门、`data.actor=工号`，叠加行级数据域（teacher 仅本班 + 公共资源，跨班读写 403），动不了别人的、也动不了管理员功能。
+- **绝不共享超级钥匙**：`ROBOT_KEY`（全局超级钥匙，非 48 位 hex）只留给管理员应急，绝不分发教师；教师一律用个人密钥。连接器启动时若检测到超级钥匙会向 stderr 输出醒目警告；`lab_whoami` 也会回显 `warning`。
+- **身份可自查**：`lab_whoami` 返回服务端推导的真实角色、通道、可见班级。老师绑定后第一步必须核对；看到 `super` / `全局超级钥匙` / `全部班级` 立即停止并上报。
+- **密钥管理仅限微信登录态**：`genRobotKey/revokeRobotKey/robotKeyStatus` 通过 robot 通道被显式禁止，防密钥被远程改写。
 - **写操作二次确认**：所有经 robot 通道的写动作需 `lab_confirm` 携令牌二次调用；令牌绑定 动作+参数+身份，篡改即失效。
+- **回归闸门**：`node tools/test-robot-channel.js`（机器通道身份安全，30 项）须随 `smoke / rbac / data-scope` 一起跑绿后才部署。
 
 ---
 
@@ -155,6 +186,7 @@ CloudBase 集合读取 → 返回 {code:0, data}
 | `mcp/docs-proxy-server.js` | 新增 `lab_write`（写白名单 + L1 确认）、`lab_confirm`（携令牌二次执行）；`READ_ACTIONS` 增加 `alerts` / `lab_context` / `lab_forget`；`WRITE_ACTIONS` 增加 `addMaterial` / `stocktake`；Phase 4 多轮会话记忆编排（锚点实体缓存，隐私红线）；**双传输层：HTTP 触发 + CloudBase Node SDK 直连（`TCB_SECRET_ID/KEY/ENV`，无需公网入口），自动择优** |
 | `tools/test-robot-write.js` | 新增：驱动真实连接器走完 L1 写确认全流程（13 个写动作首调仅确认、确认后写入；读操作直达；非白名单被拒；令牌篡改 403），30 断言 |
 | `tools/test-mcp-transports.js` | 新增：stub 模式验证 SDK 直连回包形态处理、L1 确认门、白名单失败闭合、无传输友好报错、SDK 缺配置立即报错，7 断言 |
+| **机器通道安全加固（本次，2026-11-16）** | `index.js` `prodHandler` 新增**机器通道 fail-closed**：带 `robotKey` 却反查不到身份 → 401，杜绝降级为 `scopeOf(null).full=true` 全通越权；新增只读 `robotIdentity` 动作（生产+mock）回显服务端真实身份/通道/可见班级/风险警告；`utils/mock.js` 同构实现；`mcp/docs-proxy-server.js` 新增 `lab_whoami` 工具 + 超级钥匙启动警告（按 48 位 hex 识别个人密钥）；`tools/test-robot-channel.js` 新增 30 项安全契约；`docs/workbuddy-integration.md` 增 B.1 身份自查章节。**需部署新版 `docsProxy` 才在线上生效** |
 | `~/.workbuddy/mcp.json` | MCP 服务注册（占位环境变量，待填 `TCB_SECRET_ID/KEY/ENV` 走 SDK 直连，或 HTTP_URL + 个人密钥） |
 
 ---
