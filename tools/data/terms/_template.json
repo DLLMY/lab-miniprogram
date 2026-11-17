@@ -1,0 +1,67 @@
+{
+  "_note": "脱敏结构示例，仅用于说明字段含义。真实学期数据由 tools/build_term_data.py 生成，文件名如 2026-2027-1.json；真实文件与导出的账号清单 Excel 已被 .gitignore 排除，不得提交。",
+  "term": "YYYY-YYYY-N",
+  "generatedAt": "YYYY-MM-DD HH:MM:SS",
+  "sources": {
+    "roster": "<教职工通讯录.xlsx 绝对路径>",
+    "workload": "<教师工作量安排.xls 绝对路径>"
+  },
+  "idPrefix": "WT",
+  "role": "teacher",
+  "excluded": ["<已有超级管理员、不重复建号的姓名>"],
+  "corrections": {
+    "names": ["<工作量表写法 -> 通讯录实名；注意用户确认『吴逸锋』正确，NAME_FIX 保持为空>"],
+    "classes": ["<源表笔误 -> 规范班级名>"]
+  },
+  "classes": ["<班级权威全称A>", "<班级权威全称B>"],
+  "teachers": [
+    {
+      "id": "WT001",
+      "name": "<工作量表姓名（用户确认的写法优先）>",
+      "rawName": "<工作量表原始写法>",
+      "role": "teacher",
+      "cls": "",
+      "status": "启用",
+      "managedClasses": ["<班级权威全称A>", "<班级权威全称B>"],
+      "seq": "1",
+      "row": 3,
+      "dept": "<通讯录部门>",
+      "matchedRoster": true
+    }
+  ],
+  "classAdmins": [
+    {
+      "id": "2024DQ101",
+      "name": "24电气1班管理员1",
+      "role": "student",
+      "cls": "<班级权威全称A>",
+      "status": "启用",
+      "managedClasses": []
+    },
+    {
+      "id": "2024DQ102",
+      "name": "24电气1班管理员2",
+      "role": "student",
+      "cls": "<班级权威全称A>",
+      "status": "启用",
+      "managedClasses": []
+    }
+  ],
+  "classAdminRule": {
+    "perClass": 2,
+    "role": "student",
+    "idFormat": "<4位年份><专业缩写><1位班号><2位序号>，如 2024dq101",
+    "nameFormat": "<班级简称>管理员<序号>，如 24电气1班管理员1",
+    "clsFormat": "必须使用 classes 数组中的权威全称，禁止使用简称"
+  },
+  "retired": ["<上期有、本期无，需管理员手动停用的姓名>"],
+  "stats": {
+    "workloadTeacherRows": 0,
+    "excluded": 0,
+    "accounts": 0,
+    "classAdmins": 0,
+    "classes": 0,
+    "prevReused": 0,
+    "retired": 0
+  }
+}

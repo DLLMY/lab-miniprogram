@@ -1,8 +1,8 @@
 'use strict'
 // ============================================================================
-// lab-docs-proxy —— 实训室管理系统 · WorkBuddy 自然语言操作 MCP 连接器
+// lab-docs-proxy —— 阿磊的工具箱 · WorkBuddy 自然语言操作 MCP 连接器
 // ----------------------------------------------------------------------------
-// 作用：把「万州职教中心·实训室管理系统」云函数 docsProxy 暴露为 MCP 工具，
+// 作用：把「万州职教中心·阿磊的工具箱」云函数 docsProxy 暴露为 MCP 工具，
 //       让 WorkBuddy 用自然语言（如"查一下 A 柜有哪些物料"）调用只读查询。
 //
 // 身份：走云函数「可信机器通道」(robot 模式)。连接器在每次请求体里携带
@@ -155,9 +155,12 @@ const WRITE_ACTIONS = [
   'toolRequisition', // 工具借用申请
   'cancelReq',       // 撤回本人申请
   'io',              // 库存出入库
-  'borrow',          // 工具借出登记
+  'borrow',          // 工具借出登记（本人自借）
+  'directBorrow',    // 教师直接借出工具给指定学生：{toolId:"T001",borrower:"2024DQ101",days:7}
   'returnTool',      // 工具归还
   'approve',         // 审批单据
+  'revokeApprove',   // 撤销已通过的申请：{no:"Rxxx",reason:"..."}（回滚库存/借还）
+  'batchReject',     // 批量驳回：{nos:["R1","R2"],reason:"库存暂缺"}
   'addMaterial',     // 新增物料
   'stocktake',       // 库存盘点/期初建账
   'addRepair',       // 提交报修
@@ -172,7 +175,7 @@ const WRITE_ACTIONS = [
 const TOOLS = [
   {
     name: 'lab_query',
-    description: '对实训室管理系统发起只读查询。自然语言如"查一下 A 柜有哪些物料""列出待审批""显示实训室列表"都会映射到本工具。' +
+    description: '对阿磊的工具箱发起只读查询。自然语言如"查一下 A 柜有哪些物料""列出待审批""显示实训室列表"都会映射到本工具。' +
       'action 必须为只读白名单之一；params 为查询参数对象（可选）。',
     inputSchema: {
       type: 'object',
@@ -189,6 +192,13 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} }
   },
   {
+    name: 'lab_whoami',
+    description: '【身份自查·强烈建议每次开始操作前先调用】返回服务端按密钥反查的真实身份：工号、姓名、角色（super/admin/teacher/student）、' +
+      '通道类型（个人密钥/超级钥匙/微信）、以及可见班级范围。用于确认「我以谁的身份能操作哪些数据」，防止误用管理员超级钥匙导致越权。' +
+      '若返回角色为 super 而你并非管理员，请立即停止操作并改用个人机器人密钥。',
+    inputSchema: { type: 'object', properties: {} }
+  },
+  {
     name: 'lab_overview',
     description: '按实训室维度汇总：该实训室的报修与巡检概况。需传 labId。',
     inputSchema: {
@@ -199,14 +209,14 @@ const TOOLS = [
   },
   {
     name: 'lab_write',
-    description: '对实训室管理系统发起写操作（需二次确认）。自然语言如"帮我提交一个报修""审批单号 Rxxx 通过"会映射到本工具。' +
+    description: '对阿磊的工具箱发起写操作（需二次确认）。自然语言如"帮我提交一个报修""审批单号 Rxxx 通过"会映射到本工具。' +
       'action 必须为写操作白名单之一；params 为写操作参数对象。首次调用仅返回操作摘要与确认码，不会真正写入；' +
       '确认后调用 lab_confirm 才执行。',
     inputSchema: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: WRITE_ACTIONS, description: '写操作动作名' },
-        params: { type: 'object', description: '写操作参数（可选，如 {labId:"L001",title:"示波器故障",desc:"CH1 无波形"} / {no:"Rxxx",decision:"approve"}）' }
+        params: { type: 'object', description: '写操作参数（可选）。审批用 {no:"Rxxx",ok:true} 或 {no:"Rxxx",ok:false,reason:"库存暂缺"}；驳回必须带 reason。报修用 {labId:"L001",title:"…",desc:"…"}。也兼容 decision:"approve"/"reject"。' }
       },
       required: ['action']
     }
@@ -237,7 +247,7 @@ const TOOLS = [
   },
   {
     name: 'lab_import',
-    description: '把本地 Excel 清单批量导入实训室管理系统。' +
+    description: '把本地 Excel 清单批量导入阿磊的工具箱。' +
       'resourceType="material"（默认）导入「耗材」集合（materials，字段：名称/规格/类别/存放位置/当前库存/单位/预警线/编号）；' +
       'resourceType="tool" 导入「工具」集合（tools，字段：名称/规格/存放位置/状态/持有人/编号）。' +
       '自动按列名模糊映射字段，无需严格表头。' +
@@ -303,8 +313,11 @@ let _tcbApp = null
 function getTcbApp() {
   if (_tcbApp) return _tcbApp
   let init
-  try { init = require('@cloudbase/node-sdk') }
-  catch (e) { throw new Error('未安装 @cloudbase/node-sdk：请在 mcp/ 目录执行 `npm install @cloudbase/node-sdk` 后再用 SDK 直连模式。') }
+  try {
+    const sdk = require('@cloudbase/node-sdk')
+    init = (typeof sdk === 'function') ? sdk : sdk.init
+    if (typeof init !== 'function') throw new Error('SDK 导出既非函数也无 init 方法')
+  } catch (e) { throw new Error('未安装/不兼容 @cloudbase/node-sdk：请在 mcp/ 目录执行 `npm install @cloudbase/node-sdk` 后再用 SDK 直连模式。' + e.message) }
   _tcbApp = init({ secretId: TCB_SECRET_ID, secretKey: TCB_SECRET_KEY, env: TCB_ENV })
   return _tcbApp
 }
@@ -441,6 +454,7 @@ async function handleToolCall(id, params) {
   const args = params.arguments || {}
   let out
   if (name === 'lab_diag') out = await doCall('diag', {})
+  else if (name === 'lab_whoami') out = await doCall('robotIdentity', {})
   else if (name === 'lab_overview') {
     if (!args.labId) return send({ jsonrpc: '2.0', id, error: { code: -32602, message: 'lab_overview 需要 labId 参数' } })
     out = await doCall('labOverview', { labId: args.labId })
@@ -527,6 +541,19 @@ function handleLine(line) {
 function main() {
   if (!ROBOT_KEY) {
     log('警告: DOCS_PROXY_ROBOT_KEY 未设置，所有工具调用将返回错误提示（不影响 MCP 握手）。')
+  } else {
+    // 个人密钥是 48 位 hex（云函数 crypto.randomBytes(24).toString('hex')）。
+    // 非此格式的一律视为「全局超级钥匙」——它拥有 super 全库权限，绝不可分发给普通教师。
+    const looksPersonal = /^[0-9a-f]{48}$/.test(ROBOT_KEY)
+    if (!looksPersonal) {
+      log('============================================================')
+      log('⚠️ 安全警告：当前 DOCS_PROXY_ROBOT_KEY 是【全局超级钥匙】（非 48 位个人密钥格式）。')
+      log('   该密钥以超级管理员身份运行，可读写全校所有班级数据，绕过行级隔离。')
+      log('   仅管理员本人应急使用；绝不可把本配置/该密钥分发给普通教师。')
+      log('   教师应在小程序「我的 → 个人机器人密钥」自行生成密钥后填入自己的配置。')
+      log('   开始操作前建议调用 lab_whoami 核对当前身份。')
+      log('============================================================')
+    }
   }
   const mode = TRANSPORT || (TCB_SECRET_ID && TCB_SECRET_KEY && TCB_ENV ? 'sdk(自动择优)' : (HTTP_URL ? 'http(自动择优)' : '未配置'))
   log('传输模式: ' + mode + (String(mode).indexOf('sdk') >= 0 ? '（@cloudbase/node-sdk 直连，无需公网 HTTP 入口）' : ''))

@@ -103,5 +103,25 @@ ok(attemptPlan('listMaterials', CLOUD_CHAIN) === 'TRY,TRY,TRY',
 ok(attemptPlan('io', ['mock']) === 'TRY',
   "纯演示链 [mock] 上写操作仍可在主后端执行：TRY")
 
+console.log('\n[4] 清库接口 clearAllData 安全契约（super 专属 + 禁降级 + 默认保留 users）')
+ok(bs.isWriteAction('clearAllData'), 'clearAllData 被识别为写操作（禁止主后端失败时回退，杜绝假清空）')
+const idxSrc = fs.readFileSync(path.join(ROOT, 'index.js'), 'utf8')
+// 有两处 case 'clearAllData'（mockHandler 演示版在前、prodHandler 生产版在后）；
+// 断言生产版安全门 → 取最后一处，截到下一个 case ' 之前。
+const ci = idxSrc.lastIndexOf("case 'clearAllData'")
+const cn = idxSrc.indexOf("case '", ci + 10)
+const caseBlock = ci >= 0 ? idxSrc.slice(ci, cn > ci ? cn : ci + 1200) : ''
+ok(/gSuper\(\)/.test(caseBlock), '清库 case 经过 gSuper 门（仅超级管理员）')
+ok(/robotMode\s*!==\s*'super'/.test(caseBlock), '清库 case 限定机器人超级通道（必经 L1 二次确认）')
+ok(/clearAllData/.test(idxSrc.match(/const ROBOT_WRITE = new Set\(\[([\s\S]*?)\]\)/)[1]),
+  'clearAllData 在 ROBOT_WRITE 集合内（二次确认令牌生效）')
+const cdSrc = fs.readFileSync(path.join(ROOT, 'clouddb.js'), 'utf8')
+const tdSrc = fs.readFileSync(path.join(ROOT, 'tencentdocs.js'), 'utf8')
+for (const [nm, src] of [['clouddb', cdSrc], ['tencentdocs', tdSrc]]) {
+  ok(/async function clearAllData\(/.test(src), nm + ' 导出 clearAllData 实现')
+  ok(/t !== 'users'/.test(src), nm + ' 清库默认跳过 users 表（防执行者账号自删死锁）')
+  ok(/includeUsers === true/.test(src), nm + ' 仅在显式 includeUsers=true 时才清 users')
+}
+
 console.log('\n========== 结果：' + pass + ' 通过 / ' + fail + ' 失败 ==========')
 process.exit(fail === 0 ? 0 : 1)
