@@ -76,13 +76,3 @@
   border-radius: 12rpx;
   display: inline-block;
 }
-.list-warn { color: #DC2626; font-weight: 600; }
-.list-act {
-  display: inline-block;
-  margin-top: 10rpx;
-  padding: 8rpx 24rpx;
-  font-size: 22rpx;
-  color: #5A6B85;
-  background: #F1F5F9;
-  border-radius: 999rpx;
-}

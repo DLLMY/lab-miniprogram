@@ -4,7 +4,7 @@
     <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
     <view class="guard-t">权限受限</view>
     <view class="guard-s">教师 / 管理员可在此审批领用申请<br />当前身份：{{me ? (me.id + '（' + me.name + '）· ' + roleText) : '未登录'}}</view>
-    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点下方按钮退出并重新登录即可生效。</view>
+    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员为你的工号开通对应角色，再退出重新登录即可生效。</view>
     <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
   </view>
 
@@ -23,6 +23,10 @@
     </view>
 
     <view class="page">
+      <view class="row-between mb-m">
+        <view class="muted">通过后单据移出待办，可到领用记录核对</view>
+        <view class="btn btn-ghost btn-sm" bindtap="goClaims">领用记录 →</view>
+      </view>
       <view wx:if="{{list.length===0}}" class="card">
         <view class="empty">
           <image class="empty-ic" src="/images/ic-check-s.png" mode="aspectFit"></image>
@@ -38,7 +42,10 @@
             <view class="ck {{allChecked ? 'on' : ''}}"></view>
             <view class="list-sub">全选（{{checked.length}}/{{list.length}}）</view>
           </view>
-          <view class="btn-sm primary {{checked.length ? '' : 'off'}}" bindtap="approveAll">批量通过</view>
+          <view class="row">
+            <view class="btn-sm primary {{checked.length ? '' : 'off'}}" bindtap="approveAll">批量通过</view>
+            <view class="btn-sm reject {{checked.length ? '' : 'off'}}" style="margin-left:16rpx" bindtap="batchReject">批量驳回</view>
+          </view>
         </view>
       </view>
 
@@ -48,8 +55,8 @@
             <view class="ck {{checked.indexOf(item.no) >= 0 ? 'on' : ''}}" data-no="{{item.no}}" catchtap="toggleOne"></view>
             <view class="list-ic"><image src="/images/ic-inbox-b.png" mode="aspectFit"></image></view>
             <view class="grow">
-              <view class="list-nm">{{item.kind === 'tool' ? (item.toolId + '（工具借出）') : (item.matId + ' ×' + item.qty)}}</view>
-              <view class="list-sub">申请人 {{item.user}}</view>
+              <view class="list-nm">{{item.kind === 'tool' ? ((item.itemName || item.toolId) + '（工具借出）') : ((item.itemName || item.matId) + ' ×' + item.qty)}}</view>
+              <view class="list-sub">申请人 {{item.userName || item.user}}</view>
             </view>
           </view>
           <view class="pill blue">待审批</view>
@@ -57,9 +64,16 @@
 
         <view class="kv mt-s"><text class="kv-k">申请单号</text><text class="kv-v">{{item.no}}</text></view>
         <view class="kv"><text class="kv-k">申请时间</text><text class="kv-v">{{item.time}}</text></view>
+        <!-- 归属班级：带多个班的老师审批时，必须能看出这张单是哪个班的 -->
+        <view wx:if="{{item.cls}}" class="kv"><text class="kv-k">归属班级</text><text class="kv-v">{{item.cls}}</text></view>
         <!-- 用途说明：审批时要知道"为什么领"，才谈得上批还是不批（P1-⑦） -->
         <view wx:if="{{item.reason}}" class="kv">
           <text class="kv-k">用途说明</text><text class="kv-v">{{item.reason}}</text>
+        </view>
+        <!-- 借期：学生申请时填的借用天数，审批时可见（可通过时确认/调整） -->
+        <view wx:if="{{item.kind === 'tool'}}" class="kv">
+          <text class="kv-k">借用天数</text>
+          <text class="kv-v">{{item.days ? (item.days + ' 天') : '默认 7 天'}}</text>
         </view>
 
         <view class="btn-row mt-m">
@@ -74,13 +88,34 @@
     </view>
 
     <!-- 驳回原因弹层（P1-⑧）：服务端强制，拒绝必须写明为什么 -->
+    <!-- 确认借用天数（工具借出）：学生申请时填的借期可在此调整 -->
+    <view wx:if="{{showDays}}" class="ap-mask" bindtap="closeDays">
+      <view class="ap-panel" catchtap="noop">
+        <view class="ap-head">
+          <view class="ap-title">确认借用天数</view>
+          <view class="ap-close" bindtap="closeDays"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="ap-sub">单号 {{daysNo}}{{daysHint ? (' · 申请人 ' + daysHint) : ''}} · 通过后按此天数计算应还日期</view>
+        <view class="qty" style="margin-bottom:18rpx">
+          <view class="qty-btn" bindtap="daysStep" data-d="-1"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+          <input class="qty-inp" type="number" value="{{daysValue}}" bindinput="daysInput" />
+          <view class="qty-btn" bindtap="daysStep" data-d="1"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="ap-tip">1~90 天。到期未还会计入逾期提醒。</view>
+        <view class="btn-row">
+          <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeDays">取消</button></view>
+          <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitDays">确认通过</button></view>
+        </view>
+      </view>
+    </view>
+
     <view wx:if="{{showReject}}" class="ap-mask" bindtap="closeReject">
       <view class="ap-panel" catchtap="noop">
         <view class="ap-head">
           <view class="ap-title">驳回原因</view>
           <view class="ap-close" bindtap="closeReject"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
         </view>
-        <view class="ap-sub">单号 {{rejectNo}} · 原因将展示给申请人，便于其改正后重新提交</view>
+        <view class="ap-sub">{{rejectNos.length ? ('批量驳回 ' + rejectNos.length + ' 张') : ('单号 ' + rejectNo)}} · 原因将展示给申请人，便于其改正后重新提交</view>
         <view class="ap-tags">
           <view wx:for="{{rejectPresets}}" wx:key="*this"
                 class="ap-tag {{rejectWhy === item ? 'on' : ''}}"

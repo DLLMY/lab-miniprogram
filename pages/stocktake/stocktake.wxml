@@ -6,7 +6,7 @@
         <view class="guard-t">{{modeName}}需要教师 / 管理员权限</view>
         <view class="guard-s">当前身份：{{roleText}}</view>
         <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
-        <view class="tip">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点上方按钮退出并重新登录即可生效。</view>
+        <view class="tip">如需该权限，请联系管理员为你的工号开通对应角色，再退出重新登录即可生效。</view>
       </view>
     </view>
   </block>
@@ -18,6 +18,7 @@
         <view class="hero-tag">{{mode === 'opening' ? '启用前的大盘点' : '账实核对'}}</view>
         <view class="dt-name">{{modeName}}</view>
         <view class="dt-id">共 {{list.length}} 项耗材 · 已录入 {{filled}} 项</view>
+        <view wx:if="{{invalidCount>0}}" class="st-bad">有 {{invalidCount}} 项填写不是有效数字，这些项不会被提交，请改成数字</view>
       </view>
     </view>
 
@@ -46,7 +47,7 @@
           <view class="st-lbl">{{mode === 'opening' ? '期初数量' : '实盘数量'}}</view>
           <view class="qty">
             <view class="qty-btn" data-i="{{index}}" data-d="-1" bindtap="step"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
-            <input class="qty-inp" type="number" value="{{item.real}}" data-i="{{index}}" bindinput="onReal" placeholder="0" placeholder-class="inp-ph" />
+            <input class="qty-inp {{item.invalid ? 'bad' : ''}}" type="number" value="{{item.real}}" data-i="{{index}}" bindinput="onReal" placeholder="0" placeholder-class="inp-ph" />
             <view class="qty-btn" data-i="{{index}}" data-d="1" bindtap="step"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
           </view>
           <view wx:if="{{mode !== 'opening'}}" class="st-same" data-i="{{index}}" bindtap="same">同账面</view>

@@ -1,4 +1,10 @@
-<view class="page">
+<view wx:if="{{!allowed}}" class="guard">
+  <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
+  <view class="guard-t">权限受限</view>
+  <view class="guard-s">仅教师及以上可管理账号<br />教师只能管理本人带班的学生<br />当前身份：{{me ? (me.id + '（' + me.name + '）· ' + roleText) : '未登录'}}</view>
+</view>
+
+<view wx:else class="page">
   <view class="sec">
     <view class="sec-bar"></view>
     <view class="sec-t">用户与角色</view>
@@ -6,14 +12,23 @@
   </view>
 
   <view class="row-between mb-m">
-    <view class="muted">仅管理员 / 超级管理员可见 · 数据存于用户表</view>
+    <view class="muted">教师及以上可见 · 按角色权限显示可管理账号 · 数据存于用户表</view>
     <button class="btn btn-primary btn-sm" bindtap="openAdd">+ 新增用户</button>
   </view>
 
+  <!-- 教师模式：把「我能管哪些学生」讲清楚，避免误以为看得到全校账号 -->
+  <view wx:if="{{isTeacher}}" class="field-tip">
+    你是教师：这里只显示并允许管理本人带班的学生账号。带班范围：{{myClassesText || '未配置（请联系管理员配置带班班级）'}}
+  </view>
+
   <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{loadErr}}" class="empty">
+    <view>加载失败，请下拉刷新重试</view>
+  </view>
   <view wx:elif="{{users.length===0}}" class="empty">
     <image class="empty-ic" src="/images/ic-users-s.png" mode="aspectFit"></image>
-    <view>暂无用户，点右上角新增</view>
+    <view wx:if="{{isTeacher}}">你带的班还没有学生账号，点右上角新增</view>
+    <view wx:else>暂无用户，点右上角新增</view>
   </view>
 
   <view wx:for="{{users}}" wx:key="rid" class="u-card">
@@ -25,17 +40,20 @@
         <text class="pill {{item.status==='停用'?'grey':'ok'}}">{{item.status||'启用'}}</text>
         <text wx:if="{{item.bound}}" class="pill cyan">已绑微信</text>
       </view>
-      <view class="u-sub">工号 {{item.id}}<text wx:if="{{item.cls}}"> · 班级 {{item.cls}}</text></view>
+      <view class="u-sub">工号 {{item.id}}<text wx:if="{{item.cls}}"> · 班级 {{item.cls}}</text><text wx:if="{{item.managedClasses}}"> · 带班 {{item.managedClasses}}</text></view>
+      <view class="u-sub u-cls">归属班级全称：{{item.cls || '未设置'}}<text wx:if="{{item.managedClasses}}"> ｜ 带班班级：{{item.managedClasses}}</text></view>
     </view>
     <view class="u-ops">
-      <!-- 管理员/超级管理员账号只能由超级管理员操作；普通管理员仅可管理学生/教师 -->
-      <block wx:if="{{isSuper || item.role==='student' || item.role==='teacher'}}">
+      <!-- 仅可操作「严格低于自身层级」的账号：super 全可；admin 管教师/学生；teacher 管学生（由 item.manageable 控制） -->
+      <block wx:if="{{item.manageable}}">
         <view class="u-op" data-u="{{item}}" bindtap="openEdit">编辑</view>
+        <!-- 已绑定微信的账号提供解绑：这是「工号↔微信 一对一」能被纠错的唯一正规出路 -->
+        <view class="u-op" wx:if="{{item.bound}}" data-u="{{item}}" bindtap="unbind">解绑</view>
         <!-- 停用 / 启用放在删除之前：这是人员离岗的正确处理方式，删除仅用于清理错录账号 -->
-        <view class="u-op danger" wx:if="{{item.disable}}" data-u="{{item}}" bindtap="del">删除</view>
+        <view class="u-op danger" wx:if="{{item.status==='停用'}}" data-u="{{item}}" bindtap="del">删除</view>
         <view class="u-op" wx:else data-u="{{item}}" bindtap="toggleStatus">{{item.status==='停用'?'启用':'停用'}}</view>
       </block>
-      <view wx:else class="u-op muted">需超级管理员操作</view>
+      <view wx:else class="u-op muted">需更高权限操作</view>
     </view>
   </view>
 
@@ -54,13 +72,27 @@
       </view>
       <view class="field">
         <view class="field-l">角色</view>
-        <picker mode="selector" range="{{roleLabels}}" value="{{roleIndex}}" bindchange="onRole">
+        <picker wx:if="{{roleLabels.length > 1}}" mode="selector" range="{{roleLabels}}" value="{{roleIndex}}" bindchange="onRole">
           <view class="picker-inp">{{roleLabels[roleIndex]}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
         </picker>
+        <view wx:else class="picker-inp readonly">{{roleLabels[0]}}</view>
       </view>
       <view class="field">
-        <view class="field-l">班级</view>
-        <input class="inp" value="{{form.cls}}" placeholder="选填，班级" bindinput="onCls" />
+        <view class="field-l">归属班级</view>
+        <!-- 教师：只能从本人带班里选（后端 userScopeErr 同口径，越班一律 403） -->
+        <block wx:if="{{isTeacher}}">
+          <picker mode="selector" range="{{clsOptions}}" value="{{clsIndex}}" bindchange="onClsPick">
+            <view class="picker-inp">{{form.cls || '请选择归属班级'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+          </picker>
+          <view class="field-tip">可选项为你带教的班级：{{myClassesText || '未配置'}}。学生归属到哪个班，决定你与该班任课老师能否看到其申请与流水。</view>
+        </block>
+        <input wx:else class="inp" value="{{form.cls}}" placeholder="选填，班级" bindinput="onCls" />
+      </view>
+      <!-- 老师专属：带班班级决定该老师能看到哪些业务数据（数据域隔离）。仅管理员/超管可设置 -->
+      <view class="field" wx:if="{{!isTeacher && form.role==='teacher'}}">
+        <view class="field-l">带班班级 <text class="muted">(决定可见数据范围)</text></view>
+        <input class="inp" value="{{form.managedClasses}}" placeholder="如 24电气1,24电气2（多个用逗号分隔）" bindinput="onManagedClasses" />
+        <view class="field-tip">留空则该老师只能看到公共资源与本人产生的记录。仅超级管理员 / 管理员可设置；修改后下次请求即生效。</view>
       </view>
       <view class="field">
         <view class="field-l">状态</view>

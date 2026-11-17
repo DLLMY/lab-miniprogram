@@ -37,6 +37,7 @@ Page({
   },
   nameInput(e) { this.setData({ name: e.detail.value }) },
   idInput(e) { this.setData({ id: e.detail.value }) },
+  goPrivacy() { wx.navigateTo({ url: '/pages/privacy/privacy' }) },
   async submit() {
     if (this.data.busy) return
     const name = (this.data.name || '').trim()

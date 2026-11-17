@@ -3,7 +3,7 @@
     <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
     <view class="guard-t">权限受限</view>
     <view class="guard-s">出入库登记由教师 / 管理员操作<br />当前身份：{{roleText}}</view>
-    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点下方按钮退出并重新登录即可生效。</view>
+    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员为你的工号开通对应角色，再退出重新登录即可生效。</view>
     <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
   </view>
 
@@ -28,7 +28,7 @@
           <view class="field-l">选择耗材</view>
           <picker mode="selector" range="{{mats}}" range-key="name" value="{{idx}}" bindchange="onMat">
             <view class="picker-inp">
-              <text class="{{mats.length ? '' : 'muted'}}">{{mats[idx] ? (mats[idx].name + '（' + mats[idx].id + '）') : (mats.length ? '请重新选择耗材' : '耗材加载中…')}}</text>
+              <text class="{{mats.length ? '' : 'muted'}}">{{mats[idx] ? (mats[idx].name + '（' + mats[idx].id + '）') : (matsErr ? '耗材加载失败，请重试' : (mats.length ? '请重新选择耗材' : '耗材加载中…'))}}</text>
               <image class="picker-arrow" src="/images/ic-chevron-s.png" mode="aspectFit"></image>
             </view>
           </picker>
@@ -132,6 +132,7 @@
           <view class="grow">
             <view class="list-nm">{{item.itemName}}<block wx:if="{{item.reversed}}"> <text class="pill grey">已冲销</text></block></view>
             <view class="list-sub">{{item.item}} · {{item.op}} · {{item.time}}<block wx:if="{{item.src}}"> · {{item.src}}</block></view>
+            <view wx:if="{{item.cls}}" class="cls-line">班级：{{item.cls}}</view>
             <view wx:if="{{item.note}}" class="list-sub">{{item.note}}</view>
             <!-- 冲销入口（P2-㉒，仅管理员）：错了用反向流水更正，不删记录 -->
             <view wx:if="{{isAdmin && !item.reversed}}" class="list-act" data-no="{{item.id}}" catchtap="reverseIO">冲销</view>
@@ -184,6 +185,13 @@
             <view class="field-l">存放位置</view>
             <input class="inp" placeholder="请输入存放位置" placeholder-class="inp-ph" data-k="Loc" value="{{nmLoc}}" bindinput="nmInput" />
           </view>
+        </view>
+        <view class="field">
+          <view class="field-l">有效期至</view>
+          <picker mode="date" value="{{nmExpire}}" bindchange="nmExpirePick">
+            <view class="picker-inp">{{nmExpire || '不限（选填）'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+          </picker>
+          <view class="tip" style="margin-top:8rpx;font-size:22rpx;color:#94A3B8;">有保质期的耗材（焊锡膏、电池、胶水等）填写后，库存页会提前提示「临近有效期 / 已过期」。</view>
         </view>
         <view class="nm-row">
           <view class="field nm-col">

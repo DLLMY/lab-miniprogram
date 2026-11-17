@@ -1,8 +1,23 @@
 const api = require('../../utils/api.js')
 const identity = require('../../utils/identity.js')
 const exporter = require('../../utils/export.js')
+const codeUtil = require('../../utils/code.js')
 
 const PAGE = 30
+
+// 按指定字段去重（保留首次出现的顺序）：分页累加时防止新数据插入导致的行重复
+function dedupeByKey(list, field) {
+  const seen = {}
+  const out = []
+  for (const x of list || []) {
+    const k = '' + (x[field] || '')
+    if (!k) { out.push(x); continue }
+    if (seen[k]) continue
+    seen[k] = 1
+    out.push(x)
+  }
+  return out
+}
 
 Page({
   data: {
@@ -87,6 +102,7 @@ Page({
   },
   async loadMats() {
     const m = await api.call('listMaterials', {})
+    if (m === null) { this.setData({ matsErr: true }); return }
     const mats = m || []
     const patch = { mats }
     // 扫码带来的预选：命中即选中；查无此物时明确告知，否则用户会以为扫码没生效
@@ -139,10 +155,14 @@ Page({
           time: r.time || '',
           note: r.note || '',
           src: r.src || '',
+          // 班级归属必须随行带过来，否则 wxml 里的 {{item.cls}} 永远为空，
+          // 后端补的全称班级在流水页等于白做（老师按班核对账务时看不到班级）。
+          cls: r.cls || '',
           reversed: !!r.reversed
         }
       })
-      const list = reset ? mapped : this.data.logs.concat(mapped)
+      // 累加去重：翻页期间新增流水会顶到列表头，使分页偏移错位、末行重复出现
+      const list = reset ? mapped : dedupeByKey(this.data.logs.concat(mapped), 'key')
       this.setData({
         logs: list,
         ioTotal: total,
@@ -292,7 +312,9 @@ Page({
         src: this.data.type === 'in' ? this.data.srcOptions[this.data.srcIdx] : ''
       }, { noFallback: true })
       if (r && r.code === 0) {
-        wx.showToast({ title: '登记成功' })
+        // 幂等命中（并发双击 / 弱网重试）：后端判定为重复提交 → 明确说明未重复执行
+        const idemW = api.idemWarn(r)
+        wx.showToast({ title: idemW || '登记成功', icon: idemW ? 'none' : 'success' })
         this.loadMats()
         this.loadLogs(true)
       } else {
@@ -313,7 +335,9 @@ Page({
   scanOne() {
     wx.scanCode({
       success: (r) => {
-        const id = ('' + (r.result || '')).trim().toUpperCase()
+        // 复用首页 parseCode：本系统二维码是 ITEM:<ID>，第三方码可能是带 ?id= 的 URL。
+        // 此前这里直接大写整串，"ITEM:M001" 匹配不到耗材，系统自己的码在自己的批量登记里用不了。
+        const id = codeUtil.parseItemCode(r.result)
         if (!id) { wx.showToast({ title: '未识别到物品ID', icon: 'none' }); return }
         const mat = this.data.mats.find(m => ('' + m.id).trim().toUpperCase() === id)
         if (!mat) { wx.showToast({ title: '未找到该物品：' + id, icon: 'none' }); return }
@@ -363,9 +387,11 @@ Page({
       if (r && r.code === 0) {
         const d = r.data || {}
         wx.hideLoading()
+        // 幂等命中（并发双击 / 弱网重试）：后端判定为重复提交 → 明确说明未重复执行
+        const idemW = api.idemWarn(r)
         wx.showModal({
-          title: '批量入库完成',
-          content: '成功 ' + d.done + ' 项' + (d.failed ? ('，失败 ' + d.failed + ' 项：' +
+          title: idemW ? '重复提交已忽略' : '批量入库完成',
+          content: (idemW ? (idemW + '\n') : '') + '成功 ' + d.done + ' 项' + (d.failed ? ('，失败 ' + d.failed + ' 项：' +
             (d.details || []).filter(x => x.err).map(x => x.matId + '(' + x.err + ')').join('、')) : ''),
           showCancel: false, confirmText: '知道了'
         })
@@ -390,7 +416,7 @@ Page({
   openNew() {
     this.setData({
       showNew: true,
-      nmName: '', nmSpec: '', nmCat: '', nmLoc: '', nmUnit: '个', nmSafe: '', nmQty: 1
+      nmName: '', nmSpec: '', nmCat: '', nmLoc: '', nmUnit: '个', nmSafe: '', nmQty: 1, nmExpire: ''
     })
   },
   closeNew() { this.setData({ showNew: false }) },
@@ -404,6 +430,7 @@ Page({
   },
   // 阻止弹层内部点击冒泡导致遮罩关闭
   noop() {},
+  nmExpirePick(e) { this.setData({ nmExpire: e.detail.value || '' }) },
   nmStep(e) {
     const d = parseInt(e.currentTarget.dataset.d) || 0
     let q = (parseInt(this.data.nmQty) || 0) + d
@@ -431,11 +458,14 @@ Page({
         unit: (this.data.nmUnit || '').trim() || '个',
         safe: parseInt(this.data.nmSafe) || 0,
         qty: parseInt(this.data.nmQty) || 0,
+        expire: this.data.nmExpire || '',
         actor: me.id
       }, { noFallback: true })
       if (r && r.code === 0 && r.data) {
         wx.hideLoading()
-        wx.showToast({ title: '已入库 ' + r.data.id, icon: 'success' })
+        // 幂等命中（并发双击 / 弱网重试）：后端判定为重复提交 → 明确说明未重复执行
+        const idemW = api.idemWarn(r)
+        wx.showToast({ title: idemW || ('已入库 ' + r.data.id), icon: idemW ? 'none' : 'success' })
         this.setData({ showNew: false })
         this.loadMats()
         this.loadLogs(true)

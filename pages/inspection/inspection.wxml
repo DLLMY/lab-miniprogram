@@ -8,8 +8,8 @@
 
   <!-- 筛选 + 新增 -->
   <view class="row" style="gap:16rpx;margin-bottom:24rpx;flex-wrap:wrap;">
-    <picker mode="selector" range="{{labLabels}}" value="{{labIndex}}" bindchange="onFilterLab" class="grow">
-      <view class="picker-inp">{{labLabels[labIndex] || '全部实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+    <picker mode="selector" range="{{labLabels}}" value="{{filterLabIndex}}" bindchange="onFilterLab" class="grow">
+      <view class="picker-inp">{{labLabels[filterLabIndex] || '全部实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
     </picker>
     <picker mode="selector" range="{{statusLabels}}" value="{{filterStatusIndex}}" bindchange="onFilterStatus" class="grow">
       <view class="picker-inp">{{filterStatus}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
@@ -18,6 +18,9 @@
   </view>
 
   <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{loadErr}}" class="empty">
+    <view>加载失败，请下拉刷新重试</view>
+  </view>
   <view wx:elif="{{list.length===0}}" class="empty">
     <view>暂无巡检任务</view>
   </view>
@@ -28,9 +31,17 @@
       <text class="pill {{item.overdue && item.status==='待巡检' ? 'red' : item.status==='待巡检'?'blue':item.status==='已完成'?'ok':'red'}}">{{item.overdue && item.status==='待巡检' ? '已逾期' : item.status}}</text>
     </view>
     <view class="list-sub mt-s">归属：{{item.labName}}{{item.labDeleted ? '（实训室已删除）' : '（'+item.labId+'）'}}</view>
+    <view wx:if="{{item.cls}}" class="cls-line">班级：{{item.cls}}</view>
     <view class="list-sub">计划日期：{{item.planDate || '—'}} · 执行人：{{item.executorName||'—'}}</view>
     <view wx:if="{{item.status==='已完成'}}" class="list-sub">巡检结果：{{item.result||'—'}} · 完成于 {{item.doneAt||'—'}}</view>
-    <button wx:if="{{item.status!=='已完成'}}" class="btn btn-ghost btn-sm mt-m" data-item="{{item}}" bindtap="openExec">执行 / 记录结果</button>
+    <view wx:if="{{item.status!=='已完成'}}" class="btn-row" style="margin-top:16rpx">
+      <view class="btn-cell">
+        <button class="btn btn-ghost btn-sm btn-block" data-item="{{item}}" bindtap="openAssign">指派他人</button>
+      </view>
+      <view class="btn-cell">
+        <button class="btn btn-primary btn-sm btn-block" data-item="{{item}}" bindtap="openExec">执行 / 记录结果</button>
+      </view>
+    </view>
   </view>
 
 </view>
@@ -41,8 +52,8 @@
     <view class="title">新增巡检任务</view>
     <view class="field">
       <view class="field-l">归属实训室 <text class="muted">(必选)</text></view>
-      <picker mode="selector" range="{{labLabels}}" value="{{labIndex}}" bindchange="onLab">
-        <view class="picker-inp">{{labLabels[labIndex] || '请选择实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      <picker mode="selector" range="{{formLabLabels}}" value="{{labIndex}}" bindchange="onLab">
+        <view class="picker-inp">{{formLabLabels[labIndex] || '请选择实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
       </picker>
     </view>
     <view class="field">
@@ -54,6 +65,13 @@
       <picker mode="date" value="{{form.planDate}}" bindchange="onPlanDate">
         <view class="picker-inp">{{form.planDate || '选择日期'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
       </picker>
+    </view>
+    <view class="field">
+      <view class="field-l">执行人（指派）</view>
+      <picker mode="selector" range="{{execLabels}}" value="{{formExecIndex}}" bindchange="onFormExec">
+        <view class="picker-inp">{{execLabels[formExecIndex] || '我自己'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      </picker>
+      <view class="field-tip">默认指派给创建人；可在此直接改派给其他老师，建单即派活。</view>
     </view>
     <view class="btn-row mt-m">
       <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeForm">取消</button></view>
@@ -74,6 +92,25 @@
     <view class="btn-row mt-m">
       <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeExec">取消</button></view>
       <view class="btn-cell"><button class="btn btn-primary" bindtap="saveExec">标记已完成</button></view>
+    </view>
+  </view>
+</view>
+
+<!-- 指派执行人 -->
+<view wx:if="{{showAssign}}" class="mask" bindtap="closeAssign">
+  <view class="sheet" catchtap="noop">
+    <view class="title">指派：{{assigning.title}}</view>
+    <view class="list-sub">归属：{{assigning.labName}}（{{assigning.labId}}）· 计划 {{assigning.planDate||'—'}}</view>
+    <view class="field mt-m">
+      <view class="field-l">执行人</view>
+      <picker mode="selector" range="{{execLabels}}" value="{{execIndex}}" bindchange="onExecPick">
+        <view class="picker-inp">{{execLabels[execIndex] || '我自己'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      </picker>
+      <view wx:if="{{execOnlySelf}}" class="field-tip">当前身份看不到同事名册，只能指派给自己；如需指派他人，请让管理员操作。</view>
+    </view>
+    <view class="btn-row mt-m">
+      <view class="btn-cell"><button class="btn btn-ghost" bindtap="closeAssign">取消</button></view>
+      <view class="btn-cell"><button class="btn btn-primary" bindtap="submitAssign">确认指派</button></view>
     </view>
   </view>
 </view>

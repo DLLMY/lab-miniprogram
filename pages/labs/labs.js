@@ -66,14 +66,16 @@ Page({
   },
 
   async loadList() {
-    this.setData({ loading: true })
+    this.setData({ loading: true, loadErr: false })
     const list = await api.call('listLabs', {})
+    if (list === null) { this.setData({ loading: false, loadErr: true }); return }
     this.setData({ labs: Array.isArray(list) ? list : [], loading: false })
   },
 
   async loadDetail(id) {
-    this.setData({ loading: true })
+    this.setData({ loading: true, loadErr: false })
     const ov = await api.call('labOverview', { labId: id })
+    if (ov === null) { this.setData({ loading: false, loadErr: true }); return }
     this.setData({ current: ov || { lab: null, repairs: [], inspections: [] }, loading: false })
   },
 
@@ -89,11 +91,15 @@ Page({
   },
 
   // —— 负责人候选：教师 / 管理员 / 超级管理员 均可被设为实训室负责人 ——
-  async loadManagers() {
-    const list = await api.call('adminListUsers', {})
+  async loadManagers(selectId) {
+    const me = identity.current()
+    const list = await api.call('adminListUsers', me ? { actor: me.id } : {})
     const staff = (Array.isArray(list) ? list : []).filter(u => STAFF_ROLES.indexOf(u.role) >= 0)
     const labels = staff.map(u => u.name + '（' + u.id + '）')
-    this.setData({ managers: staff, managerLabels: labels, managerIndex: 0 })
+    // 编辑已有实训室时必须等候选加载完再定位负责人，否则读的是上一次的 managers，
+    // picker 会停在第一个人，保存时容易把负责人悄悄改错。
+    const idx = selectId ? staff.findIndex(m => ('' + m.id).toUpperCase() === ('' + selectId).toUpperCase()) : -1
+    this.setData({ managers: staff, managerLabels: labels, managerIndex: idx >= 0 ? idx : 0 })
   },
 
   openAdd() {
@@ -105,11 +111,9 @@ Page({
     })
   },
 
-  openEdit() {
+  async openEdit() {
     const lab = this.data.current && this.data.current.lab
     if (!lab) return
-    this.loadManagers()
-    const idx = this.data.managers.findIndex(m => ('' + m.id).toUpperCase() === ('' + lab.managerId).toUpperCase())
     const statusIndex = (lab.status === '停用') ? 1 : 0
     this.setData({
       showForm: true, editing: true,
@@ -120,8 +124,10 @@ Page({
         managerId: lab.managerId || '', managerName: lab.managerName || '',
         status: lab.status || '启用', note: lab.note || ''
       },
-      statusIndex, managerIndex: idx >= 0 ? idx : 0
+      statusIndex
     })
+    // 负责人候选异步到位后再回写 picker 索引（不能在 loadManagers 前同步读 managers）
+    await this.loadManagers(lab.managerId)
   },
 
   closeForm() { this.setData({ showForm: false }) },
@@ -166,7 +172,8 @@ Page({
     const r = await api.callFull(this.data.editing ? 'updateLab' : 'addLab', payload, { noFallback: true })
     wx.hideLoading()
     if (r && r.code === 0) {
-      wx.showToast({ title: this.data.editing ? '已更新' : '已新增', icon: 'success' })
+      const idemW = api.idemWarn(r)
+      wx.showToast({ title: idemW || (this.data.editing ? '已更新' : '已新增'), icon: idemW ? 'none' : 'success' })
       this.setData({ showForm: false })
       if (this.data.mode === 'detail') this.loadDetail((payload.id || (this.data.current && this.data.current.lab.id)))
       else this.loadList()

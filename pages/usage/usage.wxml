@@ -3,7 +3,7 @@
     <image class="guard-ic" src="/images/ic-shield-s.png" mode="aspectFit"></image>
     <view class="guard-t">权限受限</view>
     <view class="guard-s">教师 / 管理员可查看使用概况<br />当前身份：{{roleText}}</view>
-    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员在后台将你的工号设为对应角色，再点下方按钮退出并重新登录即可生效。</view>
+    <view class="guard-s" style="margin-top:10rpx;opacity:.78">如需该权限，请联系管理员为你的工号开通对应角色，再退出重新登录即可生效。</view>
     <button class="btn btn-primary btn-block" bindtap="switchAccount">退出并重新登录</button>
   </view>
 
@@ -32,6 +32,12 @@
     </view>
 
     <view class="page">
+      <!-- 导出：报表是前端聚合出来的，后端 exportData 无对应分支，走本地组装 CSV -->
+      <view class="row-between" style="margin-bottom:20rpx">
+        <view class="list-sub">统计口径：累计操作、活跃度、领用与库存水位</view>
+        <view class="btn-sm primary" bindtap="exportStat">导出统计</view>
+      </view>
+
       <!-- 核心指标 -->
       <view class="tiles">
         <view class="tile tile-blue">
@@ -127,6 +133,7 @@
           <view class="grow">
             <view class="list-nm">{{item.toolId}}</view>
             <view class="list-sub">{{item.user}} · 应还 {{item.plan}}</view>
+            <view wx:if="{{item.note}}" class="list-sub">借出备注：{{item.note}}</view>
           </view>
           <text class="pill red">已逾期</text>
         </view>
@@ -148,6 +155,26 @@
           <view class="iv-qty low">
             <view class="iv-qn">{{item.stock}}</view>
             <view class="iv-qu">/{{item.safe}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 按班级领用分布：复用领用记录页已有的 listClaims.byCls，后端无新增 -->
+      <view wx:if="{{byCls.length}}" class="card">
+        <view class="sec">
+          <view class="sec-bar"></view>
+          <view class="sec-t">按班级领用分布</view>
+          <view class="sec-x">{{byCls.length}} 个班级</view>
+        </view>
+        <view wx:for="{{byCls}}" wx:key="title" class="list-item">
+          <view class="grow">
+            <view class="list-nm">{{item.title}}</view>
+            <view class="list-sub">{{item.count}} 张申请单</view>
+            <view class="bar mt-s"><view class="bar-in" style="width:{{item.pct}}%"></view></view>
+          </view>
+          <view class="iv-qty">
+            <view class="iv-qn">{{item.qty}}</view>
+            <view class="iv-qu">件</view>
           </view>
         </view>
       </view>
@@ -175,7 +202,7 @@
           <view class="sec-x">{{stat.teacherActive}} / {{stat.teacherTotal}} 位已使用</view>
         </view>
         <view wx:if="{{!teachers.length}}" class="empty">暂无教师记录</view>
-        <view wx:for="{{teachers}}" wx:key="user.id" class="list-item">
+        <view wx:for="{{teachers}}" wx:key="key" class="list-item">
           <view class="avatar avatar-sm">{{item.initial}}</view>
           <view class="grow">
             <view class="list-nm">{{item.user.name}}</view>
@@ -193,7 +220,7 @@
           <view class="sec-x">TOP {{rank.length}}</view>
         </view>
         <view wx:if="{{!rank.length}}" class="empty">暂无使用记录</view>
-        <view wx:for="{{rank}}" wx:key="user.id" class="rk">
+        <view wx:for="{{rank}}" wx:key="key" class="rk">
           <view class="rk-no {{index < 3 ? 'top' : ''}}">{{index + 1}}</view>
           <view class="grow">
             <view class="row-between">

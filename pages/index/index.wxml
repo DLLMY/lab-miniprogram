@@ -11,7 +11,7 @@
         <view class="avatar" bindtap="switchAccount">{{meInitial}}</view>
       </view>
       <view class="hero-t">{{me ? me.name : '未登录'}}</view>
-      <view class="hero-s">{{me ? me.id : '点击右上角头像登录'}} · 智慧实训空间</view>
+      <view class="hero-s">{{me ? me.id : '点击右上角头像登录'}} · 阿磊的工具箱</view>
 
       <view class="wk-scan" bindtap="scan">
         <image class="wk-scan-ic" src="/images/ic-qr-w.png" mode="aspectFit"></image>
@@ -22,6 +22,13 @@
         <image class="wk-scan-arrow" src="/images/ic-chevron-w.png" mode="aspectFit"></image>
       </view>
     </view>
+  </view>
+
+  <!-- ===== 演示模式警示：云函数未部署 / USE_MOCK=true 时全站都是假数据，必须显眼告知 =====
+       否则老师会把真实领用登记进演示台账，事后一片空白还查不出原因。 -->
+  <view wx:if="{{isDemo}}" class="demo-bar">
+    <view class="demo-bar-t">当前为演示数据</view>
+    <view class="demo-bar-s">云函数未连接或仍处于演示模式，页面上的物品、审批与统计都不是真实台账，请勿据此录入业务数据。</view>
   </view>
 
   <!-- ===== 内容区 ===== -->
@@ -36,9 +43,13 @@
         <view class="tile-n">{{toolCount}}</view>
         <view class="tile-l">在册工具</view>
       </view>
-      <view class="tile tile-amber">
+      <view wx:if="{{isStaff}}" class="tile tile-amber">
         <view class="tile-n">{{pendingCount}}</view>
         <view class="tile-l">待办审批</view>
+      </view>
+      <view wx:else class="tile tile-amber">
+        <view class="tile-n">{{myPendingCount}}</view>
+        <view class="tile-l">我的待批</view>
       </view>
     </view>
 
@@ -53,7 +64,7 @@
       <!-- 候选下拉：锚定在搜索框下方；点击候选直达详情 -->
       <view wx:if="{{showSuggest}}" class="suggest">
         <view wx:if="{{suggest.length===0}}" class="suggest-empty">未找到匹配的物品</view>
-        <view wx:for="{{suggest}}" wx:key="id" class="suggest-item" catchtap="pickItem" data-id="{{item.id}}">
+        <view wx:for="{{suggest}}" wx:key="id" class="suggest-item" catchtap="pickItem" data-id="{{item.id}}" data-type="{{item.type}}">
           <view class="suggest-ic {{item.type==='tool'?'tool':'mat'}}">{{item.type==='tool'?'工':'耗'}}</view>
           <view class="grow">
             <view class="suggest-nm">{{item.name}}</view>
@@ -101,7 +112,7 @@
           <view class="grid-ic"><image src="/images/ic-clipboard-b.png" mode="aspectFit"></image></view>
           <view class="grow">
             <view class="grid-t">领用审批</view>
-            <view class="grid-s">处理学生申请</view>
+            <view class="grid-s">处理待办申请</view>
           </view>
         </view>
       </view>
@@ -118,8 +129,36 @@
         <view class="grid-c" data-url="/pages/io/io?tab=new" bindtap="goNewItem">
           <view class="grid-ic"><image src="/images/ic-plus-b.png" mode="aspectFit"></image></view>
           <view class="grow">
-            <view class="grid-t">物品入库</view>
-            <view class="grid-s">新物品建档入库</view>
+            <view class="grid-t">耗材建档</view>
+            <view class="grid-s">新耗材入库与出库</view>
+          </view>
+        </view>
+      </view>
+      <!-- 工具借出：此前工具只能在「扫码→详情」里借，台账页没有入口 → 找不到 -->
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/inventory/inventory?tab=tool" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-tool-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">工具借出</view>
+            <view class="grid-s">建档、借出与归还</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/delivery/delivery" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-clipboard-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">物品交付</view>
+            <view class="grid-s">照单发给学生</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/claims/claims" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-inbox-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">领用记录</view>
+            <view class="grid-s">学生领用了什么</view>
           </view>
         </view>
       </view>
@@ -129,6 +168,15 @@
           <view class="grow">
             <view class="grid-t">使用概况</view>
             <view class="grid-s">操作统计与活跃度</view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{isStaff}}" class="grid-i">
+        <view class="grid-c" data-url="/pages/qrprint/qrprint" bindtap="goStaff">
+          <view class="grid-ic"><image src="/images/ic-box-b.png" mode="aspectFit"></image></view>
+          <view class="grow">
+            <view class="grid-t">二维码打印</view>
+            <view class="grid-s">批量生成物品标签</view>
           </view>
         </view>
       </view>
@@ -156,6 +204,19 @@
           <view class="grow">
             <view class="grid-t">巡检管理</view>
             <view class="grid-s">归属实训室的巡检</view>
+          </view>
+        </view>
+      </view>
+      <!-- 学生端专属入口：此前学生功能导航只有「库存一览」，无法查看自己的申请记录 -->
+      <view wx:if="{{!isStaff}}" class="grid-i">
+        <view class="grid-c" bindtap="goMyRequests">
+          <view class="grid-ic-wrap">
+            <view class="grid-ic"><image src="/images/ic-inbox-b.png" mode="aspectFit"></image></view>
+            <text wx:if="{{myPendingCount}}" class="grid-badge">{{myPendingCount}}</text>
+          </view>
+          <view class="grow">
+            <view class="grid-t">我的申请</view>
+            <view class="grid-s">申请进度与记录</view>
           </view>
         </view>
       </view>

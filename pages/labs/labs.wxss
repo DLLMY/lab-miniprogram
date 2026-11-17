@@ -1,6 +1,4 @@
 /* pages/labs/labs.wxss · 复用 app.wxss 设计系统，仅补充页面专属类 */
-.mb-m { margin-bottom: 24rpx; }
-
 /* 行内操作小按钮（编辑 / 删除） */
 .u-op {
   font-size: 25rpx;

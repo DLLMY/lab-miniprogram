@@ -8,8 +8,8 @@
 
   <!-- 筛选 + 新增 -->
   <view class="row" style="gap:16rpx;margin-bottom:24rpx;flex-wrap:wrap;">
-    <picker mode="selector" range="{{labLabels}}" value="{{labIndex}}" bindchange="onFilterLab" class="grow">
-      <view class="picker-inp">{{labLabels[labIndex] || '全部实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+    <picker mode="selector" range="{{labLabels}}" value="{{filterLabIndex}}" bindchange="onFilterLab" class="grow">
+      <view class="picker-inp">{{labLabels[filterLabIndex] || '全部实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
     </picker>
     <picker mode="selector" range="{{statusLabels}}" value="{{filterStatusIndex}}" bindchange="onFilterStatus" class="grow">
       <view class="picker-inp">{{filterStatus}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
@@ -18,6 +18,9 @@
   </view>
 
   <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{loadErr}}" class="empty">
+    <view>加载失败，请下拉刷新重试</view>
+  </view>
   <view wx:elif="{{list.length===0}}" class="empty">
     <view>暂无报修记录</view>
   </view>
@@ -31,6 +34,7 @@
       <text class="pill {{item.priority==='紧急'?'red':item.priority==='一般'?'blue':'grey'}}">{{item.priority}}</text>
     </view>
     <view class="list-sub mt-s">归属：{{item.labName}}{{item.labDeleted ? '（实训室已删除）' : '（'+item.labId+'）'}} · {{item.category}}</view>
+    <view wx:if="{{item.cls}}" class="cls-line">班级：{{item.cls}}</view>
     <view class="list-sub">报修人：{{item.reporterName||'—'}} · {{item.reporterId}}</view>
     <view wx:if="{{item.desc}}" class="list-sub">描述：{{item.desc}}</view>
     <view wx:if="{{item.status!=='待处理'}}" class="list-sub">处理人：{{item.handlerName||'—'}} · 结果：{{item.resolvedNote||'—'}}</view>
@@ -45,8 +49,8 @@
     <view class="title">新增报修</view>
     <view class="field">
       <view class="field-l">归属实训室 <text class="muted">(必选)</text></view>
-      <picker mode="selector" range="{{labLabels}}" value="{{labIndex}}" bindchange="onLab">
-        <view class="picker-inp">{{labLabels[labIndex] || '请选择实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      <picker mode="selector" range="{{formLabLabels}}" value="{{labIndex}}" bindchange="onLab">
+        <view class="picker-inp">{{formLabLabels[labIndex] || '请选择实训室'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
       </picker>
     </view>
     <view class="field">
@@ -87,6 +91,13 @@
       <picker mode="selector" range="{{procStatusLabels}}" value="{{procStatusIndex}}" bindchange="onProcStatus">
         <view class="picker-inp">{{procStatusLabels[procStatusIndex]}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
       </picker>
+    </view>
+    <view class="field">
+      <view class="field-l">处理人（指派）</view>
+      <picker mode="selector" range="{{handlerLabels}}" value="{{handlerIndex}}" bindchange="onHandler">
+        <view class="picker-inp">{{handlerLabels[handlerIndex] || '我自己'}}<image class="list-arrow" src="/images/ic-chevron-s.png" mode="aspectFit" /></view>
+      </picker>
+      <view wx:if="{{handlerOnlySelf}}" class="field-tip">当前身份看不到同事名册，只能派给自己；如需指派他人，请让管理员操作。</view>
     </view>
     <view class="field">
       <view class="field-l">处理说明 / 结果</view>

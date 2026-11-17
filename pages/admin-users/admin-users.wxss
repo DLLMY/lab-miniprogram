@@ -1,6 +1,4 @@
 /* pages/admin-users/admin-users.wxss · 复用 app.wxss 设计系统，仅补充页面专属类 */
-.mb-m { margin-bottom: 24rpx; }
-
 .u-card {
   display: flex;
   align-items: center;
@@ -15,6 +13,8 @@
 .u-line { display: flex; align-items: center; gap: 12rpx; flex-wrap: wrap; }
 .u-name { font-size: 29rpx; font-weight: 600; color: #0D1526; }
 .u-sub { font-size: 23rpx; color: #8A99AF; margin-top: 6rpx; }
+/* 班级全称单独一行完整展示：多班教师带班长、含全角括号，不得截断 */
+.u-cls { white-space: normal; word-break: break-all; color: #6B7C96; }
 .u-ops { display: flex; flex-direction: column; gap: 12rpx; flex-shrink: 0; }
 .u-op {
   font-size: 25rpx;
@@ -27,18 +27,9 @@
 .u-op.danger { color: #DC2626; background: rgba(239, 68, 68, .10); }
 
 /* 底部弹层 */
-.mask {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(10, 16, 32, .45);
-  display: flex;
-  align-items: flex-end;
-  z-index: 50;
-}
-.sheet {
-  width: 100%;
-  background: #FFFFFF;
-  border-radius: 32rpx 32rpx 0 0;
-  padding: 36rpx 32rpx;
-  padding-bottom: calc(36rpx + env(safe-area-inset-bottom));
+/* 角色下拉仅一项时（如教师只能建学生）显示为只读文本，避免无意义的可点箭头 */
+/* 带班班级说明：配合数据域隔离，提示管理员该字段的实际影响 */
+.picker-inp.readonly {
+  background: #F5F7FA;
+  color: #6B7280;
 }

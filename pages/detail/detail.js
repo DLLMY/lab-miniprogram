@@ -10,10 +10,18 @@ Page({
     showApply: false,
     applyMode: 'material',
     apQty: 1,
+    apDays: 7,
     apReason: '',
-    usagePresets: ['实训课程教学', '技能竞赛训练', '社团活动', '设备维修', '毕业设计', '其他'],
+    usagePresets: ['日常使用', '项目制作', '整理收纳', '设备维护', '个人项目', '其他'],
     // 二维码面板
-    showQr: false
+    showQr: false,
+    // 教师直接借出弹层
+    showLend: false,
+    lendBorrower: '',
+    lendNote: '',
+    lendDays: 7,
+    borrowerPresets: [],
+    borrowerHint: ''
   },
   // 借用人和 receptor 都会变（换设备/切身份），身份与物品任一刷新都要重算一次
   refreshMineBorrow() {
@@ -25,7 +33,9 @@ Page({
   },
   onLoad(o) {
     this.setData({ role: this.currentRole() })
-    if (o.id) this.load(o.id)
+    // type 由搜索结果带过来：有 type 就精确查那张表，不靠「ID 首字母」猜类型
+    // （批量建档允许自定义编号，猜错就会显示「未找到物品」）
+    if (o.id) this.load(o.id, o.type)
   },
   onShow() {
     // 角色可能在首页被切换，页面显示时按持久化身份同步一次，避免按钮组过期
@@ -43,9 +53,9 @@ Page({
     const i = identity.current()
     return i ? i.id : ''
   },
-  async load(id) {
+  async load(id, type) {
     this.setData({ id })
-    const d = await api.call('getItem', { id })
+    const d = await api.call('getItem', { id, type: type || '' })
     if (d && d.item) {
       this.setData({ type: d.type, item: d.item })
       this.calcStock(d.item)
@@ -124,10 +134,23 @@ Page({
   /* ---------- 申请领用 / 借出（数量 + 用途） ---------- */
   openApply(e) {
     const mode = (e.currentTarget.dataset.mode === 'tool') ? 'tool' : 'material'
-    this.setData({ showApply: true, applyMode: mode, apQty: 1, apReason: '' })
+    this.setData({ showApply: true, applyMode: mode, apQty: 1, apDays: 7, apReason: '' })
   },
   closeApply() { this.setData({ showApply: false }) },
   noop() {},
+  apDaysInput(e) {
+    let d = parseInt(e.detail.value, 10)
+    if (!d || d < 1) d = 1
+    if (d > 90) d = 90
+    this.setData({ apDays: d })
+  },
+  apDaysStep(e) {
+    const delta = parseInt(e.currentTarget.dataset.d, 10) || 0
+    let d = (parseInt(this.data.apDays, 10) || 7) + delta
+    if (d < 1) d = 1
+    if (d > 90) d = 90
+    this.setData({ apDays: d })
+  },
   apQtyInput(e) {
     let q = parseInt(e.detail.value, 10)
     if (!q || q < 1) q = 1
@@ -151,6 +174,11 @@ Page({
     const reason = (this.data.apReason || '').trim()
     if (!reason) { wx.showToast({ title: '请填写或选择用途', icon: 'none' }); return }
     const qty = parseInt(this.data.apQty, 10) || 0
+    // 借期：学生申请借工具时填需要用几天（1~90），审批通过后按它算应还日期。
+    // 此前申请处没有借期入口，审批一律按默认 7 天 → 要用两周的学生第 7 天就被标逾期。
+    let apDays = parseInt(this.data.apDays, 10) || 7
+    if (apDays < 1) apDays = 1
+    if (apDays > 90) apDays = 90
     if (this.data.applyMode !== 'tool' && (!qty || qty < 1)) {
       wx.showToast({ title: '请输入正整数数量', icon: 'none' }); return
     }
@@ -163,12 +191,14 @@ Page({
       // callFull + noFallback：提交失败时展示服务端真实原因（物品不存在/数量非法/云函数未部署…），
       // 且传输层失败不回退 mock——否则会显示"已提交"而申请单根本没写进腾讯文档
       const req = this.data.applyMode === 'tool'
-        ? { action: 'toolRequisition', payload: { user: me, toolId: this.data.id, reason } }
+        ? { action: 'toolRequisition', payload: { user: me, toolId: this.data.id, reason, days: apDays } }
         : { action: 'requisition', payload: { user: me, matId: this.data.id, qty, reason } }
       const res = await api.callFull(req.action, req.payload, { noFallback: true })
       if (res && res.code === 0) {
         this.setData({ showApply: false })
-        wx.showToast({ title: '已提交，待审批', icon: 'success' })
+        // 幂等命中：5 秒内相同内容被判定为重复提交 → 必须说明"本次未重复提交"
+        const idemW = api.idemWarn(res)
+        wx.showToast({ title: idemW || '已提交，待审批', icon: idemW ? 'none' : 'success' })
         setTimeout(() => wx.navigateBack(), 800)
       } else {
         wx.showToast({ title: (res && res.data && res.data.msg) || '提交失败', icon: 'none' })
@@ -176,6 +206,78 @@ Page({
     } finally {
       wx.hideLoading()
       this.setData({ busy: false })
+    }
+  },
+  /* ---------- 教师直接借出（无需学生申请）---------- */
+  async openDirectBorrow() {
+    if (this.data.busy) return
+    this.setData({ showLend: true, lendBorrower: '', lendNote: '', lendDays: 7, borrowerHint: '' })
+    // 拉取本班学生作为快捷候选（服务端已按层级/带班过滤），加载失败不阻断手动输入
+    try {
+      const me = this.meId()
+      const list = await api.call('adminListUsers', me ? { actor: me } : {})
+      const students = (Array.isArray(list) ? list : [])
+        .filter(u => u.role === 'student')
+        .slice(0, 30)
+        .map(u => ({ id: u.id, name: u.name }))
+      this.setData({ borrowerPresets: students })
+    } catch (e) {
+      this.setData({ borrowerPresets: [], borrowerHint: '候选名单加载失败，可直接手动输入借用工号' })
+    }
+  },
+  closeLend() { this.setData({ showLend: false }) },
+  lendBorrowerInput(e) {
+    this.setData({ lendBorrower: e.detail.value, borrowerHint: '' })
+  },
+  pickBorrower(e) {
+    const id = e.currentTarget.dataset.id || ''
+    this.setData({ lendBorrower: id, borrowerHint: '' })
+  },
+  lendNoteInput(e) { this.setData({ lendNote: e.detail.value }) },
+  lendDaysInput(e) {
+    let d = parseInt(e.detail.value, 10)
+    if (!d || d < 1) d = 1
+    if (d > 90) d = 90
+    this.setData({ lendDays: d })
+  },
+  lendDayStep(e) {
+    const delta = parseInt(e.currentTarget.dataset.d, 10) || 0
+    let d = (parseInt(this.data.lendDays, 10) || 7) + delta
+    if (d < 1) d = 1
+    if (d > 90) d = 90
+    this.setData({ lendDays: d })
+  },
+  async submitLend() {
+    if (this.data.busy) return
+    const borrower = (this.data.lendBorrower || '').trim()
+    if (!borrower) { wx.showToast({ title: '请填写借用工号', icon: 'none' }); return }
+    const me = this.meId()
+    if (!me) { wx.showToast({ title: '登录已失效，请重新登录', icon: 'none' }); return }
+    this.setData({ busy: true })
+    api.warnIfDemo()
+    wx.showLoading({ title: '登记中…', mask: true })
+    let r = null
+    try {
+      r = await api.callFull('directBorrow', {
+        actor: me, toolId: this.data.id, borrower,
+        days: parseInt(this.data.lendDays, 10) || 7,
+        note: (this.data.lendNote || '').trim()
+      }, { noFallback: true })
+    } finally {
+      wx.hideLoading()
+      this.setData({ busy: false })
+    }
+    if (r && r.code === 0) {
+      this.setData({ showLend: false })
+      wx.showToast({ title: '已借出', icon: 'success' })
+      setTimeout(() => {
+        // 就地刷新详情状态，不自动返回——教师常需要连续登记多件工具
+        this.load(this.data.id)
+      }, 500)
+    } else {
+      const msg = (r && r.data && r.data.msg) || '借出失败，请重试'
+      this.setData({ borrowerHint: msg })
+      wx.showToast({ title: msg, icon: 'none' })
     }
   },
   async returnTool() {

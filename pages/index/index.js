@@ -1,5 +1,6 @@
 const identity = require('../../utils/identity.js')
 const api = require('../../utils/api.js')
+const codeUtil = require('../../utils/code.js')
 
 Page({
   data: {
@@ -13,6 +14,8 @@ Page({
     matCount: 0,
     toolCount: 0,
     pendingCount: 0,
+    // 学生端「我的申请」待处理数量（学生工作台入口的角标）
+    myPendingCount: 0,
     // 库存预警（P2-⑳）：此前只有库存页显示数字，教师不点进去永远不会知道缺货
     lowCount: 0,
     lowList: [],
@@ -45,19 +48,19 @@ Page({
     if (seen === '1') return
     const g = role === 'staff'
       ? {
-        title: '教师 / 管理员快速上手',
+        title: '管理操作快速上手',
         steps: [
           '① 扫码或搜索查到物品 → 详情页可直接「扫码入库 / 出库」',
           '② 批量到货用「连续扫码批量登记」，一次扫多件',
-          '③ 学生领用申请在「领用审批」处理，可勾选批量通过',
-          '④ 每月做一次「库存盘点」校正账面，导出 CSV 用于上报'
+          '③ 待办领用申请在「领用审批」处理，可勾选批量通过',
+          '④ 每月做一次「库存盘点」校正账面，导出 CSV 留档'
         ]
       }
       : {
-        title: '同学快速上手',
+        title: '常用操作快速上手',
         steps: [
           '① 扫物品上的二维码或搜索名称，查看库存与位置',
-          '② 点「申请领用」填数量与用途，等老师审批',
+          '② 点「申请领用」填数量与用途，待管理员审批',
           '③ 工具借出后在「我的」里点「归还我的工具」自助归还',
           '④ 申请提交错了，待审批状态下可以「撤回申请」'
         ]
@@ -81,24 +84,47 @@ Page({
   // 顶部统计瓦片：耗材数 / 工具数 / 待审批数（教师可见）
   async loadStats() {
     const staff = this.data.isStaff
-    const [mats, tools, pending] = await Promise.all([
+    const me = identity.current()
+    const [mats, tools, pending, mine] = await Promise.all([
       api.call('listMaterials', {}),
       api.call('listTools', {}),
-      staff ? api.call('pending', {}) : Promise.resolve(null)
+      staff ? api.call('pending', {}) : Promise.resolve(null),
+      // 学生端：自己的申请待审批数（工作台入口角标）。数据域已按 me.id 隔离。
+      (!staff && me) ? api.call('listMine', { user: me.id }) : Promise.resolve(null)
     ])
     // 低于安全线的耗材：只取最紧俏的 3 条做摘要，详情页看全量
     const low = (mats || [])
       .filter(m => (Number(m.safe) || 0) > 0 && (Number(m.stock) || 0) < (Number(m.safe) || 0))
       .sort((a, b) => (Number(a.stock) / Math.max(1, Number(a.safe))) - (Number(b.stock) / Math.max(1, Number(b.safe))))
+    const myRs = (mine && mine.requisitions) || []
     this.setData({
       matCount: (mats && mats.length) || 0,
       toolCount: (tools && tools.length) || 0,
       pendingCount: (pending && pending.length) || 0,
+      myPendingCount: myRs.filter(r => r.status === 'pending').length,
+      // 演示态判定必须在取数【之后】：api.call 会把本次真实数据源写进全局，
+      // 而 onShow 里先算的那次读到的是上一次会话的旧值（云函数刚切成真库时会误报）。
+      isDemo: api.isDemoData(),
       lowCount: low.length,
       lowList: low.slice(0, 3).map(m => ({
         id: m.id, name: m.name, stock: Number(m.stock) || 0, safe: Number(m.safe) || 0,
         unit: m.unit || ''
       }))
+    })
+  },
+  // 学生端「我的申请」：跳到「我的」页并滚动定位到申请记录区块
+  goMyRequests() {
+    const app = getApp()
+    // 用 globalData 传标记：目标页 onShow 时自己定位，比在 switchTab 回调里抢时序可靠
+    if (app && app.globalData) app.globalData.scrollToMyRequests = true
+    wx.switchTab({
+      url: '/pages/mine/mine',
+      fail: () => {
+        // mine 是 tabBar 页，navigateTo 跳转 tabBar 页必然失败（旧兜底本身是坏的），
+        // 这里改为明确提示，避免用户点了没反应还看不到错误。
+        if (app && app.globalData) app.globalData.scrollToMyRequests = false
+        wx.showToast({ title: '请点底部「我的」查看申请', icon: 'none' })
+      }
     })
   },
   switchAccount() {
@@ -120,8 +146,8 @@ Page({
         else wx.showToast({ title: '未识别到物品ID', icon: 'none' })
       },
       fail: () => {
-        // 开发者工具模拟器无摄像头，扫码会静默失败；给明确引导而非“点了无效”
-        wx.showToast({ title: '模拟器不支持扫码，请手动输入ID', icon: 'none' })
+        // 真机取消扫码、模拟器无摄像头都会走 fail，不能一律说「模拟器不支持」
+        wx.showToast({ title: '扫码已取消或不可用，请手动输入ID', icon: 'none' })
       }
     })
   },
@@ -129,17 +155,7 @@ Page({
   //   ① 本系统生成的码：ITEM:M001 —— 带前缀，直接取 ID
   //   ② 物品自带条形码/第三方码：原始值就是 ID 或含 ID 的 URL —— 去协议/参数后大写归一
   // 大小写一律归一：实物标签印刷、第三方生成器都可能给出小写，不归一就查不到。
-  parseCode(raw) {
-    let s = ('' + (raw || '')).trim()
-    if (!s) return ''
-    // URL 形式的码（如 http://xxx/?id=M001）优先取 query 里的 id
-    const m = s.match(/[?&]id=([^&]+)/i)
-    if (m) s = decodeURIComponent(m[1])
-    // 本系统前缀
-    const p = s.match(/^ITEM[:：]\s*(.+)$/i)
-    if (p) s = p[1]
-    return s.trim().toUpperCase()
-  },
+  parseCode(raw) { return codeUtil.parseItemCode(raw) },
   // 模糊搜索：输入即触发，220ms 防抖后向云函数 search 取候选，下拉实时展示
   onSearch(e) {
     const v = (e.detail.value || '').trim()

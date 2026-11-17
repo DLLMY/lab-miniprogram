@@ -47,6 +47,7 @@
         <view class="kv"><text class="kv-k">分类</text><text class="kv-v">{{item.cat}}</text></view>
         <view class="kv"><text class="kv-k">存放位置</text><text class="kv-v">{{item.loc}}</text></view>
         <view class="kv"><text class="kv-k">计量单位</text><text class="kv-v">{{item.unit}}</text></view>
+        <view wx:if="{{item.expire}}" class="kv"><text class="kv-k">有效期至</text><text class="kv-v {{item.expired ? 'list-warn' : (item.expiring ? 'list-soon' : '')}}">{{item.expire}}{{item.expired ? '（已过期）' : (item.expiring ? '（临近有效期）' : '')}}</text></view>
       </view>
 
       <!-- 库存水位 -->
@@ -106,7 +107,7 @@
       <view class="qr-box">
         <canvas canvas-id="itemQr" class="qr-canvas"></canvas>
       </view>
-      <view class="qr-tip">打印贴于货架或物品上；用本系统首页「扫描物品二维码」即可直达该物品。</view>
+      <view class="qr-tip">打印贴于货架或物品上；用首页「扫描物品二维码」即可直达该物品。</view>
 
       <view class="btn-row">
         <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeQr">关闭</button></view>
@@ -140,6 +141,16 @@
         </view>
       </block>
 
+      <view wx:if="{{applyMode === 'tool'}}" class="field">
+        <view class="field-l">借用天数 <text class="ap-star">*</text></view>
+        <view class="qty">
+          <view class="qty-btn" bindtap="apDaysStep" data-d="-1"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+          <input class="qty-inp" type="number" value="{{apDays}}" bindinput="apDaysInput" />
+          <view class="qty-btn" bindtap="apDaysStep" data-d="1"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="ap-tip">需要用多久就填多久（1~90 天）；到期未还会计入逾期提醒。</view>
+      </view>
+
       <view class="field">
         <view class="field-l">用途说明</view>
         <view class="ap-tags">
@@ -153,6 +164,51 @@
       <view class="btn-row">
         <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeApply">取消</button></view>
         <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitApply">提交申请</button></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 教师直接借出弹层（借用工号 + 借用天数）=====
+       教师/管理员把在库工具当场借给指定学生，登记后工具即显示「借出」，
+       归属班级跟随借用人（任课教师按班可见、按班对账）。 -->
+  <view wx:if="{{showLend}}" class="ap-mask" bindtap="closeLend">
+    <view class="ap-panel" catchtap="noop">
+      <view class="ap-head">
+        <view class="ap-title">直接借出工具</view>
+        <view class="ap-close" bindtap="closeLend"><image src="/images/ic-close-s.png" mode="aspectFit"></image></view>
+      </view>
+      <view class="ap-sub">{{item.name}} · ID {{item.id}}</view>
+
+      <view class="field">
+        <view class="field-l">借用工号 <text class="ap-star">*</text></view>
+        <input class="inp" placeholder="输入借用人本人完整工号" placeholder-class="inp-ph" value="{{lendBorrower}}" bindinput="lendBorrowerInput" />
+        <view class="ap-tags">
+          <view wx:for="{{borrowerPresets}}" wx:key="id"
+                class="ap-tag {{lendBorrower === item.id ? 'on' : ''}}"
+                data-id="{{item.id}}" data-name="{{item.name}}" bindtap="pickBorrower">{{item.name}}（{{item.id}}）</view>
+        </view>
+        <view wx:if="{{borrowerHint}}" class="ap-tip">{{borrowerHint}}</view>
+      </view>
+
+      <view class="field">
+        <view class="field-l">借用天数</view>
+        <view class="qty">
+          <view class="qty-btn" bindtap="lendDayStep" data-d="-1"><image src="/images/ic-minus-s.png" mode="aspectFit"></image></view>
+          <input class="qty-inp" type="number" value="{{lendDays}}" bindinput="lendDaysInput" />
+          <view class="qty-btn" bindtap="lendDayStep" data-d="1"><image src="/images/ic-plus-s.png" mode="aspectFit"></image></view>
+        </view>
+        <view class="ap-tip">默认 7 天，最长 90 天；到期进入逾期提醒</view>
+      </view>
+
+      <view class="field">
+        <view class="field-l">借出备注</view>
+        <input class="inp" placeholder="选填，如：临时借用，明天实训用" placeholder-class="inp-ph" value="{{lendNote}}" bindinput="lendNoteInput" />
+        <view class="ap-tip">备注会记在借还记录上，归还时老师可据此核对工具用途与状态。</view>
+      </view>
+
+      <view class="btn-row">
+        <view class="btn-cell"><button class="btn btn-ghost btn-block" bindtap="closeLend">取消</button></view>
+        <view class="btn-cell"><button class="btn btn-primary btn-block" bindtap="submitLend">确认借出</button></view>
       </view>
     </view>
   </view>
@@ -178,6 +234,10 @@
     </block>
     <block wx:elif="{{type==='tool' && role==='student' && item.status==='在库'}}">
       <button class="btn btn-primary btn-block" bindtap="openApply" data-mode="tool">申请借出</button>
+    </block>
+    <!-- 教师/管理员：工具在库时可直接借出给指定人员，不必等学生申请（P：教师直接借出工具） -->
+    <block wx:elif="{{type==='tool' && role!=='student' && item.status==='在库'}}">
+      <button class="btn btn-primary btn-block" bindtap="openDirectBorrow">直接借出</button>
     </block>
     <!-- 归还：教师/管理员可代确认；借用本人也可自助归还（P1-⑤）。
          此前学生扫到自己借的工具只能干等着，教师成为唯一的归还入口，成为流转瓶颈。 -->

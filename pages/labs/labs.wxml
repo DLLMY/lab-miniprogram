@@ -14,6 +14,9 @@
     </view>
 
     <view wx:if="{{loading}}" class="empty">加载中…</view>
+    <view wx:elif="{{loadErr}}" class="empty">
+      <view>加载失败，请下拉刷新重试</view>
+    </view>
     <view wx:elif="{{labs.length===0}}" class="empty">
       <view>{{isAdmin ? '暂无实训室，点右上角新增' : '暂无实训室'}}</view>
     </view>

@@ -49,7 +49,10 @@
       </view>
 
       <view class="card">
-        <view wx:if="{{!rows.length}}" class="empty">
+        <view wx:if="{{loadErr}}" class="empty">
+          <view>加载失败，请下拉刷新重试</view>
+        </view>
+        <view wx:elif="{{!rows.length}}" class="empty">
           <image class="empty-ic" src="/images/ic-log-s.png" mode="aspectFit"></image>
           <view>没有符合条件的日志</view>
           <view class="tip">调整筛选条件，或重置后重试</view>
@@ -62,6 +65,7 @@
               <text class="pill {{item.failed ? 'red' : 'ok'}}">{{item.result || '成功'}}</text>
             </view>
             <view class="list-sub">{{item.actor}}<block wx:if="{{tab==='log'}}"> · 对象 {{item.target || '—'}}</block></view>
+            <view wx:if="{{item.cls}}" class="cls-line">班级：{{item.cls}}</view>
           </view>
         </view>
         <view wx:if="{{hasMore}}" class="more {{loading ? 'busy' : ''}}" bindtap="loadMore">{{loading ? '加载中…' : '加载更多'}}</view>

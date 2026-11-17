@@ -4,9 +4,11 @@ const identity = require('../../utils/identity.js')
 const mock = require('../../utils/mock.js')
 
 Page({
-  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isDemo: false, rs: [], bs: [], srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false,
+  data: { me: null, meInitial: '?', roleText: '未登录', isStaff: false, isAdmin: false, isDemo: false, rs: [], bs: [], myLoadErr: false, srcText: '检测中…', srcOk: false, diag: null, diagText: '检测中…', diagOk: false,
     // 个人机器人密钥（WorkBuddy 自然语言操作自服务）
-    robotKey: '', robotKeyShown: false, hasRobotKey: false, robotBusy: false },
+    robotKey: '', robotKeyShown: false, hasRobotKey: false, robotBusy: false, returnBusy: false,
+    // 归还入库弹层（可填验收备注）
+    showReturn: false, returnToolId: '', returnNote: '' },
 
   // 云端自检：直接问云函数「你现在跑的是 mock 还是真后端（腾讯文档/云数据库）」，并把结果摊在页面上
   async runDiag() {
@@ -61,7 +63,7 @@ Page({
       roleText: i ? identity.roleText(i.role) : '未登录',
       isStaff: identity.isStaff(),
       isAdmin: identity.isAdmin(),
-      isDemo: !!(app && app.globalData && app.globalData.DEMO)
+      isDemo: api.isDemoData()
     })
     await this.runDiag()
     const d = await api.call('listMine', { user: (i && i.id) || '' })
@@ -69,12 +71,32 @@ Page({
       (app && app.globalData && app.globalData.dataSource) || ''
     const srcText = api.backendLabel(be) || '未知'
     this.setData({
+      // d===null 是云端 500/403，不能当成「没有记录」显示成空列表，否则用户以为申请丢了
+      myLoadErr: d === null,
       rs: (d && d.requisitions) || [],
       bs: (d && d.borrow) || [],
       srcText,
       srcOk: be === 'cloud' || be === 'tencent'
     })
+    // 申请列表已经渲染就先定位，不要等较慢的密钥状态接口；否则从工作台点进来长时间不滚动
+    this.scrollToMyRequests()
     await this.loadRobotStatus()
+  },
+
+  // 响应工作台「我的申请」入口：带标记进入时自动滚动到申请记录区块。
+  // 由目标页自己定位（而非跳转方抢时序），switchTab 后也能可靠生效。
+  scrollToMyRequests() {
+    const app = getApp()
+    if (!app || !app.globalData || !app.globalData.scrollToMyRequests) return
+    app.globalData.scrollToMyRequests = false
+    // 数据已渲染，等一帧再定位，避免查不到锚点
+    setTimeout(() => {
+      wx.pageScrollTo({
+        selector: '#myRequests',
+        duration: 300,
+        fail: () => { /* 定位失败不影响进入页面 */ }
+      })
+    }, 120)
   },
 
   // 读取当前用户是否已有机器人密钥（仅已登录有效）
@@ -149,6 +171,9 @@ Page({
   goStaff(e) {
     wx.navigateTo({ url: e.currentTarget.dataset.url })
   },
+  goPrivacy() {
+    wx.navigateTo({ url: '/pages/privacy/privacy' })
+  },
   // 下拉刷新：先清云端读缓存，再重跑自检与列表
   onPullDownRefresh() {
     const done = () => wx.stopPullDownRefresh()
@@ -186,4 +211,48 @@ Page({
       wx.hideLoading()
     }
   },
+
+  // 借出工具自助归还：此前「我的」里只能看到借出记录，必须再搜到工具详情才能归还，
+  // 与新手引导里“在我的里点归还我的工具”不一致。现在就地归还，并保留失败原因提示。
+  // 弹层内部点击不冒泡到遮罩：没有这个空方法，catchtap 绑定不到函数，
+  // 事件会继续冒泡到遮罩的 bindtap → 点弹层里的输入框反而把弹层关掉。
+  noop() {},
+  openReturn(e) {
+    if (this.data.returnBusy) return
+    const toolId = String((e.currentTarget.dataset.tool || '')).trim()
+    if (!toolId) { wx.showToast({ title: '该借出记录缺少工具ID', icon: 'none' }); return }
+    this.setData({ showReturn: true, returnToolId: toolId, returnNote: '' })
+  },
+  closeReturn() { this.setData({ showReturn: false, returnToolId: '', returnNote: '' }) },
+  returnNoteInput(e) { this.setData({ returnNote: e.detail.value }) },
+
+  async submitReturn() {
+    if (this.data.returnBusy) return
+    const toolId = this.data.returnToolId
+    const me = identity.current()
+    if (!toolId) { wx.showToast({ title: '该借出记录缺少工具ID', icon: 'none' }); return }
+    if (!me) { wx.showToast({ title: '请先登录', icon: 'none' }); return }
+    this.setData({ returnBusy: true })
+    api.warnIfDemo()
+    wx.showLoading({ title: '归还中…', mask: true })
+    try {
+      const r = await api.callFull('returnTool', {
+        actor: me.id, toolId, note: (this.data.returnNote || '').trim()
+      }, { noFallback: true })
+      if (r && r.code === 0) {
+        wx.showToast({ title: r.data && r.data.healed ? '已确认归还（记录已修复）' : '已确认归还', icon: 'success' })
+        this.setData({ showReturn: false, returnToolId: '', returnNote: '' })
+        await this.onShow()
+      } else {
+        wx.showModal({
+          title: '归还未完成',
+          content: (r && r.data && r.data.msg) || '请刷新后重试',
+          showCancel: false, confirmText: '知道了'
+        })
+      }
+    } finally {
+      wx.hideLoading()
+      this.setData({ returnBusy: false })
+    }
+  }
 })

@@ -78,16 +78,22 @@
   border: 2rpx solid rgba(255, 255, 255, .13);
   color: #FFFFFF;
 }
-.inp-ph { color: rgba(255, 255, 255, .30); }
 .login-card .btn-primary {
   margin-top: 12rpx;
   background: linear-gradient(135deg, #22D3EE 0%, #2B6CFF 100%);
   box-shadow: 0 14rpx 34rpx rgba(43, 108, 255, .38);
 }
+.lc-agree {
+  text-align: center;
+  margin-top: 20rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, .42);
+}
+.lc-link { color: #7DD3FC; }
 .lc-note {
   display: flex;
   align-items: flex-start;
-  margin-top: 28rpx;
+  margin-top: 24rpx;
   padding-top: 24rpx;
   border-top: 1rpx solid rgba(255, 255, 255, .09);
 }

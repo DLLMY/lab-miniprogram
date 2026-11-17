@@ -7,6 +7,20 @@ const PAGE = 50
 // 操作日志查询（管理员）
 // logs 表一直在写，但此前只能在腾讯文档里看；出了事要回答"谁在什么时候做了什么"，
 // 在系统内没有任何入口——这是审计能力上的硬缺口。
+// 按指定字段去重（保留首次出现的顺序）：分页累加时防止新数据插入导致的行重复
+function dedupeByKey(list, field) {
+  const seen = {}
+  const out = []
+  for (const x of list || []) {
+    const k = '' + (x[field] || '')
+    if (!k) { out.push(x); continue }
+    if (seen[k]) continue
+    seen[k] = 1
+    out.push(x)
+  }
+  return out
+}
+
 Page({
   data: {
     allow: false,
@@ -18,14 +32,18 @@ Page({
     offset: 0,
     hasMore: false,
     loading: false,
+    loadErr: false,
     // 筛选
     fActor: '',
     fTarget: '',
     fOp: '',
     fFrom: '',
     fTo: '',
-    opOptions: ['全部操作类型', '入库登记', '出库登记', '审批通过', '审批拒绝', '提交领用申请', '提交工具借出申请',
-      '工具借出', '归还工具', '编辑用户', '删除用户', '期初建账', '库存盘点', '冲销出入库流水', '撤销申请']
+    // 与生产实际写入的 op 值一一对齐（此前「审批通过领用」等选项线上恒 0 条）。
+    // 门禁记录在 access 表，不在这个筛选里。
+    opOptions: ['全部操作类型', '提交领用申请', '提交工具借出申请', '审批通过', '审批通过工具借出', '审批拒绝',
+      '新增耗材', '清单导入耗材', '清单导入工具', '入库登记', '出库登记', '批量入库', '批量出库',
+      '借出工具', '归还工具', '期初建账', '库存盘点', '冲销出入库流水', '撤销申请']
   },
   onShow() {
     identity.syncGlobal()
@@ -72,18 +90,23 @@ Page({
       const d = await api.call(action, Object.assign({}, f, {
         limit: PAGE, offset: reset ? 0 : this.data.offset
       }))
+      if (d === null) { this.setData({ loading: false, loadErr: true }); return }
       const rows = (d && d.rows) || []
       const mapped = rows.map((r, i) => (this.data.tab === 'access' ? {
         key: (r.id || ('a' + i + '_' + Date.now())),
         id: r.id, time: r.time, actor: r.user, op: (r.point || '门禁'), target: '', result: r.result,
+        cls: r.cls || '',
         failed: /失败|拒绝|异常/.test('' + (r.result || ''))
       } : {
         key: (r.id || ('r' + i + '_' + Date.now())),
         id: r.id, time: r.time, actor: r.actor, op: r.op, target: r.target, result: r.result,
+        cls: r.cls || '',
         // 结果列为准的成功/失败着色：便于快速扫出失败项（排障时最关心的那几行）
         failed: /失败|未生效|不足/.test('' + (r.result || ''))
       }))
-      const list = reset ? mapped : this.data.rows.concat(mapped)
+      // 累加时按 key 去重：翻页期间若产生了新数据，新行插到列表头部会让分页偏移错位，
+      // 上一页的末行会在下一页重复出现（审计日志出现同一行两次比漏行更让人不信任）。
+      const list = reset ? mapped : dedupeByKey(this.data.rows.concat(mapped), 'key')
       const total = (d && Number(d.total)) || list.length
       this.setData({
         rows: list,
