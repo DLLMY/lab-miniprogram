@@ -3,7 +3,7 @@
   "cloudfunctionRoot": "cloudfunctions/",
   "appid": "wxf61364cb15c58653",
   "compileType": "miniprogram",
-  "projectname": "lab-management",
+  "projectname": "alei-toolbox",
   "setting": {
     "urlCheck": false,
     "es6": true,

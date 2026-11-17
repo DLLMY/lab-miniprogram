@@ -35,5 +35,19 @@ Thumbs.db
 # 项目级 agent/记忆数据（不在源码管理范围）
 .workbuddy/
 
-# 数据备份（内测期每日生成，不入库）
-backup/
+# 数据备份（内测期每日生成，不入库）——仅忽略项目根目录的 backup/，
+# 不能写成裸 backup/（会连带忽略 pages/backup/ 备份功能页面源码）
+/backup/
+# 清库脚本生成的全库快照（含真实姓名/工号，严禁入库）
+tools/backup_*.json
+# 每学期教师带班主数据（含真实姓名/工号/班级，严禁入库；仅保留脱敏模板）
+tools/data/terms/*.json
+!tools/data/terms/_template.json
+# 导出的账号清单 Excel（含全部真实姓名/工号/班级，严禁入库）
+tools/data/terms/账号清单_*.xlsx
+
+# UI 渲染预览产物（tools/ui_preview.js / ui_all_preview.js 生成，Edge headless 截图）
+output/
+
+# Office/WPS 打开文件时生成的锁文件（~$ 开头），是垃圾文件，不要入库
+~$*
